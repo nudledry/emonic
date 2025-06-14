@@ -1,9 +1,9 @@
 // lib/screens/home/views/penggunaan/target_pengguna.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
-import 'package:emonic/screens/home/views/database/database_helper.dart';
-import 'package:emonic/screens/home/views/penggunaan/history_target_screen.dart';
-import 'package:emonic/screens/home/views/penggunaan/berhasil_input_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:emonic/helpers/database_helper.dart';
+import 'package:emonic/screens/target/history_target_screen.dart';
+import 'package:emonic/screens/target/berhasil_input_screen.dart';
 import 'package:emonic/constants/colors.dart';
 
 class TargetPenggunaanScreen extends StatefulWidget {
@@ -16,6 +16,7 @@ class TargetPenggunaanScreen extends StatefulWidget {
 class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
   String? selectedGolongan;
   String? selectedParameter;
+  String? selectedPeriod;
   DateTime? startDate;
   DateTime? endDate;
   final targetController = TextEditingController();
@@ -37,11 +38,23 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
     "Biaya (Rp)",
   ];
 
-  // Fungsi untuk menampilkan date picker
-  Future<void> pickDate({required bool isStart}) async {
+  // Daftar periode waktu yang tersedia
+  List<Map<String, dynamic>> periodOptions = [
+    {'label': '1 Minggu', 'days': 7, 'icon': Icons.calendar_view_week},
+    {'label': '2 Minggu', 'days': 14, 'icon': Icons.calendar_view_week},
+    {'label': '1 Bulan', 'days': 30, 'icon': Icons.calendar_view_month},
+    {'label': '2 Bulan', 'days': 60, 'icon': Icons.calendar_view_month},
+    {'label': '3 Bulan', 'days': 90, 'icon': Icons.calendar_view_month},
+    {'label': '6 Bulan', 'days': 180, 'icon': Icons.date_range},
+    {'label': '1 Tahun', 'days': 365, 'icon': Icons.date_range},
+    {'label': 'Kustom', 'days': 0, 'icon': Icons.edit_calendar},
+  ];
+
+  // Fungsi untuk menampilkan date picker untuk tanggal mulai
+  Future<void> pickStartDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isStart ? DateTime.now() : (startDate ?? DateTime.now()),
+      initialDate: startDate ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
       builder: (context, child) {
@@ -58,15 +71,80 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
         );
       },
     );
+
     if (picked != null) {
       setState(() {
-        if (isStart) {
-          startDate = picked;
-        } else {
-          endDate = picked;
-        }
+        startDate = picked;
+        _calculateEndDate();
       });
     }
+  }
+
+  // Fungsi untuk menampilkan date picker untuk tanggal akhir (hanya untuk kustom)
+  Future<void> pickEndDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate:
+          endDate ?? (startDate?.add(Duration(days: 30)) ?? DateTime.now()),
+      firstDate: startDate ?? DateTime.now(),
+      lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primaryBlue,
+              onPrimary: AppColors.white,
+              surface: AppColors.white,
+              onSurface: AppColors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        endDate = picked;
+      });
+    }
+  }
+
+  // Fungsi untuk menghitung tanggal akhir berdasarkan periode yang dipilih
+  void _calculateEndDate() {
+    if (startDate != null &&
+        selectedPeriod != null &&
+        selectedPeriod != 'Kustom') {
+      final selectedPeriodData = periodOptions.firstWhere(
+        (period) => period['label'] == selectedPeriod,
+      );
+      final days = selectedPeriodData['days'] as int;
+      setState(() {
+        endDate = startDate!.add(
+            Duration(days: days - 1)); // -1 karena hari pertama sudah termasuk
+      });
+    }
+  }
+
+  // Fungsi untuk menghitung durasi dalam hari
+  int _getDurationInDays() {
+    if (startDate != null && endDate != null) {
+      return endDate!.difference(startDate!).inDays + 1;
+    }
+    return 0;
+  }
+
+  // Fungsi untuk mendapatkan deskripsi periode
+  String _getPeriodDescription() {
+    if (startDate == null || endDate == null) return '';
+
+    final days = _getDurationInDays();
+    final startDateStr =
+        "${startDate!.day.toString().padLeft(2, '0')}/${startDate!.month.toString().padLeft(2, '0')}/${startDate!.year}";
+    final endDateStr =
+        "${endDate!.day.toString().padLeft(2, '0')}/${endDate!.month.toString().padLeft(2, '0')}/${endDate!.year}";
+
+    return "$startDateStr - $endDateStr ($days hari)";
   }
 
   // Fungsi untuk menyimpan data ke SQLite
@@ -74,29 +152,55 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
     if (_formKey.currentState?.validate() ?? false) {
       if (selectedGolongan != null &&
           selectedParameter != null &&
+          selectedPeriod != null &&
           startDate != null &&
           endDate != null &&
           targetController.text.isNotEmpty) {
+        // Validasi tanggal
+        if (endDate!.isBefore(startDate!)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  const Text("Tanggal akhir tidak boleh sebelum tanggal mulai"),
+              backgroundColor: AppColors.red,
+            ),
+          );
+          return;
+        }
 
         // Dapatkan userId saat ini dari Firebase Authentication
         final userId = FirebaseAuth.instance.currentUser?.uid;
 
         if (userId == null) {
-          // Tampilkan pesan error jika pengguna belum login
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Anda harus login untuk menyimpan target.")),
+            SnackBar(
+              content: const Text("Anda harus login untuk menyimpan target."),
+              backgroundColor: AppColors.red,
+            ),
           );
-          return; // Hentikan proses penyimpanan
+          return;
         }
 
         try {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          );
+
           Map<String, dynamic> targetData = {
-            'userId': userId, // <--- Tambahkan userId di sini
+            'userId': userId,
             'golongan': selectedGolongan,
             'parameter': selectedParameter,
             'startDate': startDate!.toIso8601String(),
             'endDate': endDate!.toIso8601String(),
             'target': targetController.text,
+            'period': selectedPeriod,
+            'duration_days': _getDurationInDays(),
             'createdAt': DateTime.now().toIso8601String(),
           };
 
@@ -127,6 +231,7 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
   bool _isFormFilled() {
     return selectedGolongan != null &&
         selectedParameter != null &&
+        selectedPeriod != null &&
         startDate != null &&
         endDate != null &&
         targetController.text.isNotEmpty;
@@ -261,133 +366,89 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildSectionLabel("Waktu Mulai"),
-                                  const SizedBox(height: 8),
-                                  _buildRoundedDateField(
-                                    label: "Pilih tanggal mulai",
-                                    selectedDate: startDate,
-                                    onTap: () => pickDate(isStart: true),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 30),
-                          Form(
-                            key: _formKey,
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  "Golongan Rumah Tangga",
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                                const SizedBox(height: 8),
-                                _buildRoundedDropdown(
-                                  label: "Golongan Rumah Tangga",
-                                  value: selectedGolongan,
-                                  items: golonganOptions,
-                                  onChanged: (value) =>
-                                      setState(() => selectedGolongan = value),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "Parameter Target",
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                                const SizedBox(height: 8),
-                                _buildRoundedDropdown(
-                                  label: "Parameter Target",
-                                  value: selectedParameter,
-                                  items: parameterOptions,
-                                  onChanged: (value) =>
-                                      setState(() => selectedParameter = value),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "Waktu Mulai",
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                                const SizedBox(height: 8),
-                                _buildRoundedDateField(
-                                  label: "Waktu Mulai",
-                                  selectedDate: startDate,
-                                  onTap: () => pickDate(isStart: true),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "Waktu Akhir",
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                                const SizedBox(height: 8),
-                                _buildRoundedDateField(
-                                  label: "Waktu Akhir",
-                                  selectedDate: endDate,
-                                  onTap: () => pickDate(isStart: false),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "Nilai Target",
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                                const SizedBox(height: 8),
-                                _buildRoundedTextField(
-                                    label: "Nilai Target",
-                                    controller: targetController),
-                                const SizedBox(height: 30),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    onPressed: _isFormFilled()
-                                        ? _saveToSQLite
-                                        : null,
-                                    style: ElevatedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 16, horizontal: 50),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12)),
-                                      backgroundColor: _isFormFilled()
-                                          ? const Color.fromARGB(
-                                              255, 250, 204, 2)
-                                          : Colors.lightBlue[100],
-                                      foregroundColor: _isFormFilled()
-                                          ? Colors.blue
-                                          : Colors.white,
-                                      textStyle:
-                                          const TextStyle(fontSize: 18),
-                                    ),
-                                    child: Text(
-                                      "Simpan",
-                                      style: TextStyle(
-                                        color: _isFormFilled()
-                                            ? const Color.fromARGB(
-                                                255, 255, 255, 255)
-                                            : Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                        _buildSectionLabel("Periode Waktu"),
+                        const SizedBox(height: 8),
+                        _buildPeriodSelector(),
+                        const SizedBox(height: 20),
+
+                        _buildSectionLabel("Tanggal Mulai"),
+                        const SizedBox(height: 8),
+                        _buildRoundedDateField(
+                          label: "Pilih tanggal mulai",
+                          selectedDate: startDate,
+                          onTap: pickStartDate,
                         ),
                         const SizedBox(height: 20),
+
+                        // Tampilkan field tanggal akhir hanya untuk periode kustom
+                        if (selectedPeriod == 'Kustom') ...[
+                          _buildSectionLabel("Tanggal Akhir"),
+                          const SizedBox(height: 8),
+                          _buildRoundedDateField(
+                            label: "Pilih tanggal akhir",
+                            selectedDate: endDate,
+                            onTap: pickEndDate,
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // Tampilkan preview periode
+                        if (startDate != null && endDate != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color:
+                                  AppColors.primaryBlue.withValues(alpha: .1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color:
+                                    AppColors.primaryBlue.withValues(alpha: .3),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: AppColors.primaryBlue,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      "Preview Periode",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primaryBlue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _getPeriodDescription(),
+                                  style: TextStyle(
+                                    color: AppColors.primaryBlue,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
 
                         _buildSectionLabel("Nilai Target"),
                         const SizedBox(height: 8),
                         _buildRoundedTextField(
-                          label: "Masukkan nilai target",
+                          label: selectedParameter != null
+                              ? "Masukkan nilai target ${selectedParameter!.toLowerCase()}"
+                              : "Masukkan nilai target",
                           controller: targetController,
                           icon: Icons.flag,
+                          suffixText:
+                              selectedParameter == "Biaya (Rp)" ? "Rp" : "kWh",
                         ),
                         const SizedBox(height: 32),
 
@@ -395,8 +456,7 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed:
-                                _isFormFilled() ? _saveToFirestore : null,
+                            onPressed: _isFormFilled() ? _saveToSQLite : null,
                             icon: Icon(
                               Icons.save,
                               color: _isFormFilled()
@@ -444,6 +504,77 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: AppColors.black,
+      ),
+    );
+  }
+
+  // Widget untuk pemilih periode
+  Widget _buildPeriodSelector() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.grey.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Dropdown untuk periode
+          DropdownButtonFormField<String>(
+            value: selectedPeriod,
+            onChanged: (value) {
+              setState(() {
+                selectedPeriod = value;
+                if (value != 'Kustom') {
+                  _calculateEndDate();
+                } else {
+                  // Reset endDate untuk periode kustom
+                  endDate = null;
+                }
+              });
+            },
+            items: periodOptions.map((period) {
+              return DropdownMenuItem<String>(
+                value: period['label'],
+                child: Row(
+                  children: [
+                    Icon(
+                      period['icon'],
+                      color: AppColors.primaryBlue,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      period['label'],
+                      style: TextStyle(color: AppColors.black),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            decoration: InputDecoration(
+              labelText: "Pilih periode waktu",
+              labelStyle: TextStyle(color: AppColors.textGrey),
+              prefixIcon: Icon(Icons.access_time, color: AppColors.primaryBlue),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+            ),
+            style: TextStyle(color: AppColors.black),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Periode harus dipilih';
+              }
+              return null;
+            },
+            icon: Icon(Icons.arrow_drop_down, color: AppColors.textGrey),
+            isExpanded: true,
+            dropdownColor: AppColors.white,
+          ),
+        ],
       ),
     );
   }
@@ -556,12 +687,14 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
     required String label,
     required TextEditingController controller,
     required IconData icon,
+    String? suffixText,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: TextInputType.number,
       decoration: InputDecoration(
         labelText: label,
+        suffixText: suffixText,
         labelStyle: TextStyle(color: AppColors.textGrey),
         filled: true,
         fillColor: AppColors.backgroundColor,
