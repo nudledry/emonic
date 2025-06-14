@@ -43,3 +43,21 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Add these lines to prevent future leaks
+# Sensitive files - NEVER COMMIT THESE
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+ios/firebase_app_id_file.json
+lib/firebase_options.dart
+**/.firebase/
+**/node_modules/
+**/.env
+**/*.env
+**/google-services.json
+**/GoogleService-Info.plist
