@@ -13,6 +13,10 @@ class _BerhasilInputScreenState extends State<BerhasilInputScreen> {
   @override
   void initState() {
     super.initState();
+    // Tunggu beberapa detik sebelum navigasi ke history screen
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        // Navigasi langsung ke history dengan push (bukan replace)
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         Navigator.pushReplacement(

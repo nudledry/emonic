@@ -1,5 +1,7 @@
+// lib/screens/home/views/penggunaan/target_pengguna.dart
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import 'package:emonic/screens/home/views/database/database_helper.dart';
 import 'package:emonic/screens/home/views/penggunaan/history_target_screen.dart';
 import 'package:emonic/screens/home/views/penggunaan/berhasil_input_screen.dart';
 import 'package:emonic/constants/colors.dart';
@@ -18,6 +20,7 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
   DateTime? endDate;
   final targetController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final DatabaseHelper _databaseHelper = DatabaseHelper();
 
   // Daftar opsi untuk dropdown
   List<String> golonganOptions = [
@@ -66,33 +69,38 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
     }
   }
 
-  // Fungsi untuk menyimpan data ke Firestore
-  void _saveToFirestore() async {
+  // Fungsi untuk menyimpan data ke SQLite
+  void _saveToSQLite() async {
     if (_formKey.currentState?.validate() ?? false) {
       if (selectedGolongan != null &&
           selectedParameter != null &&
           startDate != null &&
           endDate != null &&
           targetController.text.isNotEmpty) {
-        try {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => Center(
-              child: CircularProgressIndicator(
-                color: AppColors.primaryBlue,
-              ),
-            ),
-          );
 
-          await FirebaseFirestore.instance.collection('targets').add({
+        // Dapatkan userId saat ini dari Firebase Authentication
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+
+        if (userId == null) {
+          // Tampilkan pesan error jika pengguna belum login
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Anda harus login untuk menyimpan target.")),
+          );
+          return; // Hentikan proses penyimpanan
+        }
+
+        try {
+          Map<String, dynamic> targetData = {
+            'userId': userId, // <--- Tambahkan userId di sini
             'golongan': selectedGolongan,
             'parameter': selectedParameter,
-            'startDate': Timestamp.fromDate(startDate!),
-            'endDate': Timestamp.fromDate(endDate!),
+            'startDate': startDate!.toIso8601String(),
+            'endDate': endDate!.toIso8601String(),
             'target': targetController.text,
-            'createdAt': Timestamp.now(),
-          });
+            'createdAt': DateTime.now().toIso8601String(),
+          };
+
+          await _databaseHelper.insertTarget(targetData);
 
           Navigator.pop(context); // Close loading dialog
 
@@ -269,17 +277,103 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildSectionLabel("Waktu Akhir"),
-                                  const SizedBox(height: 8),
-                                  _buildRoundedDateField(
-                                    label: "Pilih tanggal akhir",
-                                    selectedDate: endDate,
-                                    onTap: () => pickDate(isStart: false),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 30),
+                          Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  "Golongan Rumah Tangga",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildRoundedDropdown(
+                                  label: "Golongan Rumah Tangga",
+                                  value: selectedGolongan,
+                                  items: golonganOptions,
+                                  onChanged: (value) =>
+                                      setState(() => selectedGolongan = value),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Parameter Target",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildRoundedDropdown(
+                                  label: "Parameter Target",
+                                  value: selectedParameter,
+                                  items: parameterOptions,
+                                  onChanged: (value) =>
+                                      setState(() => selectedParameter = value),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Waktu Mulai",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildRoundedDateField(
+                                  label: "Waktu Mulai",
+                                  selectedDate: startDate,
+                                  onTap: () => pickDate(isStart: true),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Waktu Akhir",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildRoundedDateField(
+                                  label: "Waktu Akhir",
+                                  selectedDate: endDate,
+                                  onTap: () => pickDate(isStart: false),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Nilai Target",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildRoundedTextField(
+                                    label: "Nilai Target",
+                                    controller: targetController),
+                                const SizedBox(height: 30),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: _isFormFilled()
+                                        ? _saveToSQLite
+                                        : null,
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 16, horizontal: 50),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12)),
+                                      backgroundColor: _isFormFilled()
+                                          ? const Color.fromARGB(
+                                              255, 250, 204, 2)
+                                          : Colors.lightBlue[100],
+                                      foregroundColor: _isFormFilled()
+                                          ? Colors.blue
+                                          : Colors.white,
+                                      textStyle:
+                                          const TextStyle(fontSize: 18),
+                                    ),
+                                    child: Text(
+                                      "Simpan",
+                                      style: TextStyle(
+                                        color: _isFormFilled()
+                                            ? const Color.fromARGB(
+                                                255, 255, 255, 255)
+                                            : Colors.white,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),

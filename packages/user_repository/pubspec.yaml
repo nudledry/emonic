@@ -14,8 +14,14 @@ dependencies:
   firebase_auth: ^4.16.0
   cloud_firestore: ^4.9.2
   firebase_storage: ^11.6.0
+  sqflite: ^2.3.0 #cobasapa
   rxdart: ^0.27.7
   path: ^1.8.3
+  path_provider: ^2.1.1 #cobasapa
+  intl: ^0.18.1 #cobasapa
+
+user_repository:
+  path: packages/user_repository #cobasapa
 
 dev_dependencies:
   flutter_test:
