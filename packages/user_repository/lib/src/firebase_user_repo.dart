@@ -148,4 +148,25 @@ class FirebaseUserRepo implements UserRepository {
       throw Exception('Failed to update password');
     }
   }
+
+  @override
+  Future<void> resetPassword(String email) async {
+    try {
+      await _firebaseAuth.sendPasswordResetEmail(email: email);
+      log('Password reset email sent to $email');
+    } catch (e) {
+      log('Error sending password reset email: ${e.toString()}');
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'user-not-found':
+            throw Exception('No user found with this email address');
+          case 'invalid-email':
+            throw Exception('Invalid email address');
+          default:
+            throw Exception('Failed to send reset email: ${e.message}');
+        }
+      }
+      throw Exception('Failed to send password reset email');
+    }
+  }
 }

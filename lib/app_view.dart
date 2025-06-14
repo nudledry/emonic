@@ -23,9 +23,11 @@ class MyAppView extends StatelessWidget {
       ),
       home: BlocBuilder<AuthenticationBloc, AuthenticationState>(
         builder: ((context, state) {
+          // Always show splash screen first when app starts
           if (state.status == AuthenticationStatus.unknown) {
             return const SplashScreen();
           }
+          // After splash screen, check authentication status
           if (state.status == AuthenticationStatus.authenticated) {
             return const HomeScreen();
           }
