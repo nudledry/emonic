@@ -225,7 +225,7 @@ class SettingsScreen extends StatelessWidget {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16), // Konsisten dengan cards
+          borderRadius: BorderRadius.circular(16),
         ),
         title: Row(
           children: [
@@ -238,7 +238,7 @@ class SettingsScreen extends StatelessWidget {
             const Text(
               'Keluar',
               style: TextStyle(
-                fontWeight: FontWeight.bold, // Bold seperti header
+                fontWeight: FontWeight.bold,
                 color: AppColors.black,
                 fontSize: 18,
               ),

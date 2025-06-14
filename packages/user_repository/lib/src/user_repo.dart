@@ -14,4 +14,6 @@ abstract class UserRepository {
   Future<String> updateEmail(String newEmail, String password);
 
   Future<void> updatePassword(String currentPassword, String newPassword);
+
+  Future<void> resetPassword(String email);
 }
