@@ -50,12 +50,12 @@ Kontribusi pada project ini meliputi pengembangan sistem autentikasi lengkap (lo
 
 ## Screenshot
 
-![Beranda](https://imgur.com/zL6Vrnc)
-![Pencatatan Energi](https://imgur.com/t6mXLK0)
-![Grafik Penggunaan Energi](https://imgur.com/Zia6W1w)
-![Target Penggunaan](https://imgur.com/2Wdhe1b)
-![Berita](https://imgur.com/NKFHCMG)
-![Pengaturan](https://imgur.com/dQbcEpx)
+![Beranda](https://i.imgur.com/zL6Vrnc.png)
+![Pencatatan Energi](https://i.imgur.com/t6mXLK0.png)
+![Grafik Penggunaan Energi](https://i.imgur.com/Zia6W1w.png)
+![Target Penggunaan](https://i.imgur.com/2Wdhe1b.png)
+![Berita](https://i.imgur.com/NKFHCMG.png)
+![Pengaturan](https://i.imgur.com/dQbcEpx.png)
 
 ## Lisensi
 
