@@ -26,7 +26,7 @@ Untuk menggunakan aplikasi Emonic, cukup unduh file APK yang tersedia dan lakuka
 
 1. **Unduh file APK**
    - Dapatkan file APK Emonic dari link berikut:  
-     [Link Download APK](https://drive.google.com/file/d/1HyYF_UIMEgxyWyuGo0Mm-uTjoBsXa1IC/view?usp=sharing](https://drive.google.com/file/d/1x6O4U13ssOiUaABhQc5pMStL6SOWLjJD/view?usp=sharing)
+     [Link Download APK](https://drive.google.com/file/d/1x6O4U13ssOiUaABhQc5pMStL6SOWLjJD/view?usp=sharing)
 
 2. **Instal aplikasi**
    - Buka file APK yang telah diunduh pada perangkat Android.
