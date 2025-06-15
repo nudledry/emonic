@@ -32,15 +32,16 @@ class _BerhasilInputScreenState extends State<BerhasilInputScreen>
 
     _animationController.forward();
 
-    // Auto navigate after 2 seconds - just pop back
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        Navigator.pushReplacementNamed(
-          context,
-          '/home',
-          arguments: {'index': 1},
-        );
-      }
+    // Auto navigate after 2 seconds - using WidgetsBinding
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && context.mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/',
+            (route) => false,
+          );
+        }
+      });
     });
   }
 
