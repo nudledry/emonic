@@ -29,10 +29,11 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    // Create daily_usage table dengan struktur lengkap
+    // Create daily_usage table dengan userId column
     await db.execute('''
       CREATE TABLE daily_usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId TEXT NOT NULL,
         golongan TEXT NOT NULL,
         parameter TEXT NOT NULL,
         nilai REAL NOT NULL,
@@ -61,7 +62,7 @@ class DatabaseHelper {
 
     // Add indexes untuk performa optimal
     await db.execute(
-        'CREATE INDEX idx_daily_usage_tanggal ON daily_usage(tanggal)');
+        'CREATE INDEX idx_daily_usage_user_tanggal ON daily_usage(userId, tanggal)');
     await db.execute(
         'CREATE INDEX idx_daily_usage_parameter ON daily_usage(parameter)');
     await db.execute(
@@ -74,10 +75,13 @@ class DatabaseHelper {
   }
 
   // ===== DAILY USAGE METHODS =====
-
   Future<int> insertDailyUsage(Map<String, dynamic> usage) async {
     try {
       final db = await database;
+      // Ensure userId is included in the data
+      if (!usage.containsKey('userId')) {
+        throw Exception('userId is required for daily usage entry');
+      }
       return await db.insert('daily_usage', usage);
     } catch (e) {
       print('Error inserting daily usage: $e');
@@ -85,42 +89,103 @@ class DatabaseHelper {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getDailyUsage() async {
+  Future<List<Map<String, dynamic>>> getDailyUsage([String? userId]) async {
     try {
       final db = await database;
-      return await db.query(
-        'daily_usage',
-        orderBy: 'tanggal DESC, created_at DESC',
-      );
+
+      if (userId != null) {
+        // Filter by userId if provided
+        return await db.query(
+          'daily_usage',
+          where: 'userId = ?',
+          whereArgs: [userId],
+          orderBy: 'tanggal DESC, created_at DESC',
+        );
+      } else {
+        // Return all data (for backward compatibility)
+        return await db.query(
+          'daily_usage',
+          orderBy: 'tanggal DESC, created_at DESC',
+        );
+      }
     } catch (e) {
       print('Error getting daily usage: $e');
+
+      // Handle case where userId column doesn't exist (backward compatibility)
+      if (e.toString().contains('no such column: userId')) {
+        try {
+          final db = await database;
+          return await db.query(
+            'daily_usage',
+            orderBy: 'tanggal DESC, created_at DESC',
+          );
+        } catch (e2) {
+          print('Error in fallback query: $e2');
+          return [];
+        }
+      }
       return [];
     }
   }
 
   Future<List<Map<String, dynamic>>> getDailyUsageByDateRange(
-      String startDate, String endDate) async {
+      String startDate, String endDate,
+      [String? userId]) async {
     try {
       final db = await database;
-      return await db.query(
-        'daily_usage',
-        where: 'tanggal >= ? AND tanggal <= ?',
-        whereArgs: [startDate, endDate],
-        orderBy: 'tanggal DESC',
-      );
+
+      if (userId != null) {
+        return await db.query(
+          'daily_usage',
+          where: 'tanggal >= ? AND tanggal <= ? AND userId = ?',
+          whereArgs: [startDate, endDate, userId],
+          orderBy: 'tanggal DESC',
+        );
+      } else {
+        return await db.query(
+          'daily_usage',
+          where: 'tanggal >= ? AND tanggal <= ?',
+          whereArgs: [startDate, endDate],
+          orderBy: 'tanggal DESC',
+        );
+      }
     } catch (e) {
       print('Error getting daily usage by date range: $e');
+
+      // Handle backward compatibility
+      if (e.toString().contains('no such column: userId')) {
+        try {
+          final db = await database;
+          return await db.query(
+            'daily_usage',
+            where: 'tanggal >= ? AND tanggal <= ?',
+            whereArgs: [startDate, endDate],
+            orderBy: 'tanggal DESC',
+          );
+        } catch (e2) {
+          print('Error in fallback query: $e2');
+          return [];
+        }
+      }
       return [];
     }
   }
 
-  Future<double> getTotalUsageByDate(String date) async {
+  Future<double> getTotalUsageByDate(String date, [String? userId]) async {
     try {
       final db = await database;
-      final result = await db.rawQuery(
-          'SELECT SUM(nilai) as total FROM daily_usage WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)"',
-          [date]);
-      return (result.first['total'] as double?) ?? 0.0;
+
+      if (userId != null) {
+        final result = await db.rawQuery(
+            'SELECT SUM(nilai) as total FROM daily_usage WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)" AND userId = ?',
+            [date, userId]);
+        return (result.first['total'] as double?) ?? 0.0;
+      } else {
+        final result = await db.rawQuery(
+            'SELECT SUM(nilai) as total FROM daily_usage WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)"',
+            [date]);
+        return (result.first['total'] as double?) ?? 0.0;
+      }
     } catch (e) {
       print('Error getting total usage by date: $e');
       return 0.0;

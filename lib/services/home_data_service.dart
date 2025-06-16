@@ -1,11 +1,14 @@
 import 'package:emonic/helpers/database_helper.dart';
 import 'package:emonic/models/usage_model.dart';
 import 'package:emonic/services/usage_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 class HomeDataService {
   final UsageService _usageService = UsageService();
   final DatabaseHelper _databaseHelper = DatabaseHelper();
+
+  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   List<Map<String, dynamic>> dailyUsageData = [];
   Map<String, dynamic>? currentTarget;
@@ -28,21 +31,46 @@ class HomeDataService {
 
   Future<void> loadData() async {
     try {
-      // Load daily usage data from SQLite
-      final usageData = await _databaseHelper.getDailyUsage();
+      final userId = _currentUserId;
+      if (userId == null) {
+        print('User not authenticated, loading limited data');
+        return;
+      }
 
-      // Load current target from SQLite (bukan Firestore)
+      // Load daily usage data from SQLite for current user only
+      final usageData = await _databaseHelper.getDailyUsage(userId);
+
+      // Load current target from SQLite for current user
       final targetData = await _databaseHelper.getActiveTarget();
+
+      // Verify target belongs to current user
+      if (targetData != null && targetData['userId'] != userId) {
+        print('Active target does not belong to current user');
+        // Set targetData to null if it doesn't belong to current user
+        _processTargetData(null);
+      } else {
+        _processTargetData(targetData);
+      }
 
       // Calculate usage metrics
       _calculateUsageMetrics(usageData);
 
-      // Process target data
-      _processTargetData(targetData);
-
       dailyUsageData = usageData;
     } catch (e) {
       print('Error loading data: $e');
+
+      // Fallback for backward compatibility
+      try {
+        final usageData = await _databaseHelper.getDailyUsage();
+        final targetData = await _databaseHelper.getActiveTarget();
+
+        _calculateUsageMetrics(usageData);
+        _processTargetData(targetData);
+
+        dailyUsageData = usageData;
+      } catch (e2) {
+        print('Error in fallback data loading: $e2');
+      }
     }
   }
 
@@ -160,8 +188,14 @@ class HomeDataService {
   }
 
   // Method untuk mendapatkan target berdasarkan user
-  Future<void> loadUserTarget(String userId) async {
+  Future<void> loadUserTarget([String? specificUserId]) async {
     try {
+      final userId = specificUserId ?? _currentUserId;
+      if (userId == null) {
+        print('No user ID available for loading target');
+        return;
+      }
+
       final targets = await _databaseHelper.getTargetsByUser(userId);
 
       if (targets.isNotEmpty) {
@@ -172,8 +206,7 @@ class HomeDataService {
             return endDate.isAfter(DateTime.now()) ||
                 endDate.isAtSameMomentAs(DateTime.now());
           },
-          orElse: () => targets
-              .first, // Fallback ke target terbaru jika tidak ada yang aktif
+          orElse: () => targets.first,
         );
 
         currentTarget = activeTarget;

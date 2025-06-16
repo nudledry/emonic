@@ -4,6 +4,7 @@ import 'package:emonic/services/home_data_service.dart';
 import 'package:emonic/screens/usage/daily_usage_screen.dart';
 import 'package:emonic/constants/colors.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ConsumptionChartCard extends StatelessWidget {
   final HomeDataService dataService;
@@ -160,8 +161,31 @@ class ConsumptionChartCard extends StatelessWidget {
   }
 
   ChartData _prepareChartData() {
-    List<FlSpot> usageSpots = [];
+    List<FlSpot> usageSpots = _generateUsageSpots();
     List<FlSpot> targetSpots = [];
+    List<String> dates = [];
+
+    for (int i = 6; i >= 0; i--) {
+      final date = DateTime.now().subtract(Duration(days: i));
+      DateFormat('yyyy-MM-dd').format(date);
+      dates.add(DateFormat('MM/dd').format(date));
+
+      // Target line (daily target = weekly target / 7)
+      if (dataService.targetValue > 0) {
+        double dailyTarget = dataService.targetValue / 7;
+        targetSpots.add(FlSpot((6 - i).toDouble(), dailyTarget));
+      }
+    }
+
+    return ChartData(
+      usageSpots: usageSpots,
+      targetSpots: targetSpots,
+      labels: dates,
+    );
+  }
+
+  List<FlSpot> _generateUsageSpots() {
+    List<FlSpot> usageSpots = [];
     List<String> dates = [];
 
     for (int i = 6; i >= 0; i--) {
@@ -169,11 +193,20 @@ class ConsumptionChartCard extends StatelessWidget {
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       dates.add(DateFormat('MM/dd').format(date));
 
-      // Filter dan hitung usage hanya untuk parameter "Daya Listrik (kWh)"
+      // Filter dan hitung usage hanya untuk parameter "Daya Listrik (kWh)" dan user saat ini
       double dayUsage = 0.0;
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
       for (var usage in dataService.dailyUsageData) {
+        // Check if usage belongs to current user (if userId field exists)
+        bool belongsToCurrentUser = true;
+        if (usage.containsKey('userId') && currentUserId != null) {
+          belongsToCurrentUser = usage['userId'] == currentUserId;
+        }
+
         if (usage['tanggal'] == dateStr &&
-            usage['parameter'] == 'Daya Listrik (kWh)') {
+            usage['parameter'] == 'Daya Listrik (kWh)' &&
+            belongsToCurrentUser) {
           double nilai = 0.0;
 
           // Handle berbagai tipe data untuk nilai
@@ -188,19 +221,9 @@ class ConsumptionChartCard extends StatelessWidget {
       }
 
       usageSpots.add(FlSpot((6 - i).toDouble(), dayUsage));
-
-      // Target line (daily target = weekly target / 7)
-      if (dataService.targetValue > 0) {
-        double dailyTarget = dataService.targetValue / 7;
-        targetSpots.add(FlSpot((6 - i).toDouble(), dailyTarget));
-      }
     }
 
-    return ChartData(
-      usageSpots: usageSpots,
-      targetSpots: targetSpots,
-      labels: dates,
-    );
+    return usageSpots;
   }
 
   FlGridData _buildGridData() {
