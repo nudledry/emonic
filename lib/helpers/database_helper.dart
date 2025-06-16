@@ -24,15 +24,24 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'emonic.db');
-    await deleteDatabase(path); // Fresh start untuk development
+    // await deleteDatabase(path); // HAPUS BARIS INI!
 
     return await openDatabase(
       path,
       version: 3,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade, // Tambahkan untuk handle version upgrade
       readOnly: false,
       singleInstance: true,
     );
+  }
+
+  // Tambahkan method untuk handle database upgrade
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < newVersion) {
+      // Handle database schema changes jika diperlukan
+      print('Database upgraded from version $oldVersion to $newVersion');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {

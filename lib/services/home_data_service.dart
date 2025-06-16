@@ -31,8 +31,6 @@ class HomeDataService {
       // If this is the first call or user has changed, update current user ID
       if (_currentUserId != user.uid) {
         _currentUserId = user.uid;
-        // Clear existing data when user changes
-        _clearAllData();
       }
 
       return _currentUserId;
@@ -68,17 +66,6 @@ class HomeDataService {
       final dataUserId = item['userId'] as String?;
       return dataUserId != null && dataUserId == currentUserId;
     }).toList();
-  }
-
-  // Method to clear all data
-  void _clearAllData() {
-    currentTarget = null;
-    weeklyUsage = 0.0;
-    monthlyUsage = 0.0;
-    recentUsage.clear();
-    _todayUsage = 0.0;
-    _yesterdayUsage = 0.0;
-    _dailyUsageData.clear();
   }
 
   // Existing getter with null safety
@@ -229,7 +216,6 @@ class HomeDataService {
       final userId = _getCurrentUserId();
       if (userId == null) {
         print('Warning: Cannot load data - user not authenticated');
-        _clearAllData();
         return;
       }
 
@@ -322,7 +308,6 @@ class HomeDataService {
       print('Data loaded successfully for user: $userId');
     } catch (e) {
       print('Error loading home data: $e');
-      _clearAllData();
     }
   }
 
@@ -332,14 +317,10 @@ class HomeDataService {
       final userId = _getCurrentUserId();
       if (userId == null) {
         print('Warning: Cannot refresh data - user not authenticated');
-        _clearAllData();
         return;
       }
 
       print('Refreshing data for user: $userId');
-
-      // Clear all data
-      _clearAllData();
 
       // Reload all data
       await loadData();
@@ -347,7 +328,6 @@ class HomeDataService {
       print('Data refreshed successfully for user: $userId');
     } catch (e) {
       print('Error refreshing home data: $e');
-      _clearAllData();
     }
   }
 
@@ -364,8 +344,6 @@ class HomeDataService {
   // Method to handle user logout
   void handleUserLogout() {
     _currentUserId = null;
-    _clearAllData();
-    print('User data cleared after logout');
   }
 
   // Method to safely initialize data for authenticated users
@@ -376,11 +354,9 @@ class HomeDataService {
         await loadData();
       } else {
         print('Info: No user authenticated, using default empty data');
-        _clearAllData();
       }
     } catch (e) {
       print('Error initializing data: $e');
-      _clearAllData();
     }
   }
 }
