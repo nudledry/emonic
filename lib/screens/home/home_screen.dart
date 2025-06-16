@@ -77,13 +77,20 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 36,
             child: FloatingActionButton(
               mini: true,
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                // Navigate to add usage screen and refresh data when returning
+                final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const DailyUsageScreen(),
                   ),
                 );
+
+                // Refresh home content if data was added
+                if (result == true && mounted) {
+                  // Trigger refresh di HomeContent
+                  setState(() {});
+                }
               },
               backgroundColor: AppColors.white,
               foregroundColor: AppColors.primaryBlue,

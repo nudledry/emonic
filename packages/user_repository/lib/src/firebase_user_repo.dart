@@ -16,11 +16,28 @@ class FirebaseUserRepo implements UserRepository {
   @override
   Stream<MyUser?> get user {
     return _firebaseAuth.authStateChanges().flatMap((firebaseUser) async* {
+      log('AuthStateChanges triggered: ${firebaseUser?.uid}'); // Tambahkan log ini
       if (firebaseUser == null) {
+        log('No Firebase user, yielding MyUser.empty');
         yield MyUser.empty;
       } else {
-        yield await usersCollection.doc(firebaseUser.uid).get().then((value) =>
-            MyUser.fromEntity(MyUserEntity.fromDocument(value.data()!)));
+        try {
+          log('Fetching user document for uid: ${firebaseUser.uid}');
+          final doc = await usersCollection.doc(firebaseUser.uid).get();
+          if (doc.exists && doc.data() != null) {
+            log('User document found, creating MyUser');
+            final myUser =
+                MyUser.fromEntity(MyUserEntity.fromDocument(doc.data()!));
+            log('MyUser created: ${myUser.toString()}');
+            yield myUser;
+          } else {
+            log('User document not found, yielding MyUser.empty');
+            yield MyUser.empty;
+          }
+        } catch (e) {
+          log('Error fetching user data: $e');
+          yield MyUser.empty;
+        }
       }
     });
   }
@@ -28,10 +45,22 @@ class FirebaseUserRepo implements UserRepository {
   @override
   Future<void> signIn(String email, String password) async {
     try {
-      await _firebaseAuth.signInWithEmailAndPassword(
+      log('Attempting to sign in with email: $email');
+      final result = await _firebaseAuth.signInWithEmailAndPassword(
           email: email, password: password);
+      log('Sign in successful, uid: ${result.user?.uid}');
+
+      final userDoc = await usersCollection.doc(result.user!.uid).get();
+      if (!userDoc.exists) {
+        log('Creating user document for uid: ${result.user!.uid}');
+        await usersCollection.doc(result.user!.uid).set({
+          'userId': result.user!.uid,
+          'email': email,
+          'name': result.user!.displayName ?? '',
+        });
+      }
     } catch (e) {
-      log(e.toString());
+      log('Sign in failed: ${e.toString()}');
       rethrow;
     }
   }

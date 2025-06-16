@@ -1,272 +1,317 @@
 import 'package:emonic/helpers/database_helper.dart';
-import 'package:emonic/models/usage_model.dart';
-import 'package:emonic/services/usage_service.dart';
+import 'package:emonic/constants/tarif_listrik.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 class HomeDataService {
-  final UsageService _usageService = UsageService();
   final DatabaseHelper _databaseHelper = DatabaseHelper();
 
-  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
-
-  List<Map<String, dynamic>> dailyUsageData = [];
   Map<String, dynamic>? currentTarget;
-  double todayUsage = 0.0;
-  double yesterdayUsage = 0.0;
   double weeklyUsage = 0.0;
-  double targetValue = 0.0;
-  double progressPercentage = 0.0;
+  double monthlyUsage = 0.0;
+  List<Map<String, dynamic>> recentUsage = [];
 
-  double get weeklyUsageInKwh {
-    double totalKwh = 0.0;
+  // Add new fields for daily usage tracking
+  double _todayUsage = 0.0;
+  double _yesterdayUsage = 0.0;
+  List<Map<String, dynamic>> _dailyUsageData = [];
 
-    for (final data in dailyUsageData) {
-      final usage = UsageModel.fromMap(data);
-      totalKwh += usage.nilaiInKwh;
+  // Add field to track current user
+  String? _currentUserId;
+
+  // Method to verify and get current user ID
+  String? _getCurrentUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
     }
 
-    return totalKwh;
-  }
-
-  Future<void> loadData() async {
-    try {
-      final userId = _currentUserId;
-      if (userId == null) {
-        print('User not authenticated, loading limited data');
-        return;
-      }
-
-      // Load daily usage data from SQLite for current user only
-      final usageData = await _databaseHelper.getDailyUsage(userId);
-
-      // Load current target from SQLite for current user
-      final targetData = await _databaseHelper.getActiveTarget();
-
-      // Verify target belongs to current user
-      if (targetData != null && targetData['userId'] != userId) {
-        print('Active target does not belong to current user');
-        // Set targetData to null if it doesn't belong to current user
-        _processTargetData(null);
-      } else {
-        _processTargetData(targetData);
-      }
-
-      // Calculate usage metrics
-      _calculateUsageMetrics(usageData);
-
-      dailyUsageData = usageData;
-    } catch (e) {
-      print('Error loading data: $e');
-
-      // Fallback for backward compatibility
-      try {
-        final usageData = await _databaseHelper.getDailyUsage();
-        final targetData = await _databaseHelper.getActiveTarget();
-
-        _calculateUsageMetrics(usageData);
-        _processTargetData(targetData);
-
-        dailyUsageData = usageData;
-      } catch (e2) {
-        print('Error in fallback data loading: $e2');
-      }
-    }
-  }
-
-  void _calculateUsageMetrics(List<Map<String, dynamic>> usageData) {
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final yesterday = DateFormat('yyyy-MM-dd').format(
-      DateTime.now().subtract(const Duration(days: 1)),
-    );
-    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
-
-    double todayTotal = 0.0;
-    double yesterdayTotal = 0.0;
-    double weeklyTotal = 0.0;
-
-    for (var usage in usageData) {
-      // Filter hanya parameter "Daya Listrik (kWh)"
-      if (usage['parameter'] != 'Daya Listrik (kWh)') continue;
-
-      final usageDate = DateTime.parse(usage['tanggal']);
-      double nilai = 0.0;
-
-      // Handle berbagai tipe data untuk nilai
-      if (usage['nilai'] is String) {
-        nilai = double.tryParse(usage['nilai']) ?? 0.0;
-      } else if (usage['nilai'] is num) {
-        nilai = usage['nilai'].toDouble();
-      }
-
-      if (usage['tanggal'] == today) {
-        todayTotal += nilai;
-      }
-      if (usage['tanggal'] == yesterday) {
-        yesterdayTotal += nilai;
-      }
-      if (usageDate.isAfter(weekAgo)) {
-        weeklyTotal += nilai;
-      }
+    // If this is the first call or user has changed, update current user ID
+    if (_currentUserId != user.uid) {
+      _currentUserId = user.uid;
+      // Clear existing data when user changes
+      _clearAllData();
     }
 
-    todayUsage = todayTotal;
-    yesterdayUsage = yesterdayTotal;
-    weeklyUsage = weeklyTotal;
+    return _currentUserId;
   }
 
-  void _processTargetData(Map<String, dynamic>? targetData) {
-    double target = 0.0;
+  // Method to verify if data belongs to current user
+  bool _verifyDataOwnership(Map<String, dynamic> data) {
+    final currentUserId = _getCurrentUserId();
+    final dataUserId = data['userId'] as String?;
 
-    print('DEBUG: Target data received: $targetData');
-
-    if (targetData != null) {
-      // Handle berbagai format target
-      if (targetData['target'] is String) {
-        target = double.tryParse(targetData['target']) ?? 0.0;
-      } else if (targetData['target'] is num) {
-        target = targetData['target'].toDouble();
-      }
-
-      print('DEBUG: Parsed target value: $target');
-    } else {
-      print('DEBUG: No target data found');
+    if (dataUserId == null || dataUserId != currentUserId) {
+      print(
+          'Warning: Data ownership mismatch. Expected: $currentUserId, Found: $dataUserId');
+      return false;
     }
 
-    currentTarget = targetData;
-    targetValue = target;
+    return true;
   }
 
-  Future<void> loadWeeklyUsage() async {
-    try {
-      weeklyUsage = await _usageService.getWeeklyUsageInKwh();
-    } catch (e) {
-      print('Error loading weekly usage: $e');
-    }
+  // Method to filter data by current user
+  List<Map<String, dynamic>> _filterDataByCurrentUser(
+      List<Map<String, dynamic>> data) {
+    final currentUserId = _getCurrentUserId();
+    return data.where((item) {
+      final dataUserId = item['userId'] as String?;
+      return dataUserId != null && dataUserId == currentUserId;
+    }).toList();
   }
 
-  Future<Map<String, double>> getUsageStatistics() async {
-    try {
-      return await _usageService.getUsageBreakdown();
-    } catch (e) {
-      print('Error getting usage statistics: $e');
-      return {};
-    }
+  // Method to clear all data
+  void _clearAllData() {
+    currentTarget = null;
+    weeklyUsage = 0.0;
+    monthlyUsage = 0.0;
+    recentUsage.clear();
+    _todayUsage = 0.0;
+    _yesterdayUsage = 0.0;
+    _dailyUsageData.clear();
   }
 
-  // Method untuk refresh data
-  Future<void> refreshData() async {
-    await loadData();
-    await loadWeeklyUsage();
-  }
+  // Existing getter
+  double get targetValue {
+    if (currentTarget == null) return 0.0;
 
-  // Method untuk mendapatkan usage hari ini dalam kWh
-  Future<double> getTodayUsageInKwh() async {
-    try {
-      final today = DateTime.now();
-      return await _usageService.getTotalUsageByDate(today);
-    } catch (e) {
-      print('Error getting today usage: $e');
+    // Verify target ownership before returning value
+    if (!_verifyDataOwnership(currentTarget!)) {
+      print('Warning: Target data ownership verification failed');
       return 0.0;
     }
+
+    return double.tryParse(currentTarget!['target']?.toString() ?? '0') ?? 0.0;
   }
 
-  // Method untuk mendapatkan perbandingan dengan kemarin
-  double get usageComparisonWithYesterday {
-    if (yesterdayUsage == 0) return 0.0;
-    return ((todayUsage - yesterdayUsage) / yesterdayUsage) * 100;
+  // Add missing getters with verification
+  double get todayUsage => _todayUsage;
+  double get yesterdayUsage => _yesterdayUsage;
+  double get weeklyUsageInKwh => weeklyUsage;
+  List<Map<String, dynamic>> get dailyUsageData => _dailyUsageData;
+
+  // Fungsi baru untuk mendapatkan target value dalam kWh
+  double get targetValueInKwh {
+    if (currentTarget == null) return 0.0;
+
+    final targetValue = this.targetValue;
+    final parameter = currentTarget!['parameter'] as String?;
+    final golongan = currentTarget!['golongan'] as String?;
+
+    // Jika parameter adalah "Daya Listrik (kWh)", nilai sudah dalam kWh
+    if (parameter == "Daya Listrik (kWh)") {
+      return targetValue;
+    }
+
+    // Jika parameter adalah "Biaya (Rp)" dan golongan tidak null, konversi ke kWh
+    if (parameter == "Biaya (Rp)" && golongan != null) {
+      return TarifListrik.convertBiayaToKwh(targetValue, golongan);
+    }
+
+    // Default: anggap sudah dalam kWh (untuk backward compatibility)
+    return targetValue;
   }
 
-  // Method untuk status target
-  bool get isOverTarget => weeklyUsage > targetValue && targetValue > 0;
+  // Fungsi untuk mendapatkan target value dalam format Rupiah
+  double get targetValueInRupiah {
+    if (currentTarget == null) return 0.0;
 
-  String get targetStatus {
-    if (currentTarget == null) return 'No Target Set';
-    if (isOverTarget) return 'Over Target';
-    if (weeklyUsage >= targetValue * 0.8) return 'Near Target';
-    return 'On Track';
+    final targetValue = this.targetValue;
+    final parameter = currentTarget!['parameter'] as String?;
+    final golongan = currentTarget!['golongan'] as String?;
+
+    // Jika parameter adalah "Biaya (Rp)", nilai sudah dalam Rupiah
+    if (parameter == "Biaya (Rp)") {
+      return targetValue;
+    }
+
+    // Jika parameter adalah "Daya Listrik (kWh)" dan golongan tidak null, konversi ke Rupiah
+    if (parameter == "Daya Listrik (kWh)" && golongan != null) {
+      return TarifListrik.convertKwhToBiaya(targetValue, golongan);
+    }
+
+    // Default: konversi dari kWh ke Rupiah menggunakan tarif default
+    if (golongan != null) {
+      return TarifListrik.convertKwhToBiaya(targetValue, golongan);
+    }
+
+    return TarifListrik.convertKwhToBiaya(targetValue, "R-1/TR Daya 900 VA");
   }
 
-  // Method untuk mendapatkan target berdasarkan user
-  Future<void> loadUserTarget([String? specificUserId]) async {
+  // Fungsi untuk mengecek apakah target terlampaui
+  bool get isOverTarget => weeklyUsage > targetValueInKwh;
+
+  // Fungsi untuk mendapatkan persentase progress
+  double get progressPercentage =>
+      (weeklyUsage / targetValueInKwh).clamp(0.0, 1.0);
+
+  // Fungsi untuk mendapatkan persentase kelebihan
+  double get overagePercentage => weeklyUsage > targetValueInKwh
+      ? (weeklyUsage - targetValueInKwh) / targetValueInKwh
+      : 0.0;
+
+  // Fungsi untuk mendapatkan nilai kelebihan dalam kWh
+  double get overageAmount =>
+      weeklyUsage > targetValueInKwh ? weeklyUsage - targetValueInKwh : 0.0;
+
+  // Fungsi untuk mendapatkan sisa target dalam kWh
+  double get remainingTargetAmount =>
+      targetValueInKwh > weeklyUsage ? targetValueInKwh - weeklyUsage : 0.0;
+
+  // Add missing loadWeeklyUsage method with verification
+  Future<void> loadWeeklyUsage() async {
     try {
-      final userId = specificUserId ?? _currentUserId;
-      if (userId == null) {
-        print('No user ID available for loading target');
-        return;
-      }
+      final userId = _getCurrentUserId();
+      if (userId == null) throw Exception('User not authenticated');
 
-      final targets = await _databaseHelper.getTargetsByUser(userId);
+      final now = DateTime.now();
+      final weekAgo = now.subtract(const Duration(days: 7));
 
-      if (targets.isNotEmpty) {
-        // Ambil target yang masih aktif
-        final activeTarget = targets.firstWhere(
-          (target) {
-            final endDate = DateTime.parse(target['endDate']);
-            return endDate.isAfter(DateTime.now()) ||
-                endDate.isAtSameMomentAs(DateTime.now());
-          },
-          orElse: () => targets.first,
-        );
+      // Get weekly usage with user verification
+      final weeklyUsageData =
+          await _databaseHelper.getUsageInDateRange(userId, weekAgo, now);
 
-        currentTarget = activeTarget;
-        targetValue =
-            double.tryParse(activeTarget['target']?.toString() ?? '0') ?? 0.0;
+      // Filter and verify data ownership
+      final verifiedData = _filterDataByCurrentUser(weeklyUsageData);
 
-        // Recalculate progress
-        if (targetValue > 0) {
-          progressPercentage = (weeklyUsage / targetValue).clamp(0.0, 1.0);
+      weeklyUsage = verifiedData.fold(0.0, (sum, usage) {
+        final parameter = usage['parameter'] as String?;
+        final golongan = usage['golongan'] as String?;
+        final nilai = usage['nilai'] as double? ?? 0.0;
+
+        // Konversi ke kWh jika diperlukan
+        if (parameter == "Daya Listrik (kWh)") {
+          return sum + nilai;
+        } else if (parameter == "Biaya (Rp)" && golongan != null) {
+          return sum + TarifListrik.convertBiayaToKwh(nilai, golongan);
         }
-      }
+        return sum + nilai;
+      });
     } catch (e) {
-      print('Error loading user target: $e');
+      print('Error loading weekly usage: $e');
+      rethrow;
     }
   }
 
-  // Method untuk mendapatkan statistik penggunaan mingguan
-  Future<List<Map<String, dynamic>>> getWeeklyUsageStats() async {
+  // Helper method to convert usage data to kWh
+  double _convertToKwh(Map<String, dynamic> usage) {
+    final parameter = usage['parameter'] as String?;
+    final golongan = usage['golongan'] as String?;
+    final nilai = usage['nilai'] as double? ?? 0.0;
+
+    if (parameter == "Daya Listrik (kWh)") {
+      return nilai;
+    } else if (parameter == "Biaya (Rp)" && golongan != null) {
+      return TarifListrik.convertBiayaToKwh(nilai, golongan);
+    }
+    return nilai;
+  }
+
+  // Enhanced loadData method with verification
+  Future<void> loadData() async {
     try {
-      final endDate = DateTime.now();
-      final startDate = endDate.subtract(const Duration(days: 7));
+      final userId = _getCurrentUserId();
+      if (userId == null) throw Exception('User not authenticated');
 
-      final startDateStr = DateFormat('yyyy-MM-dd').format(startDate);
-      final endDateStr = DateFormat('yyyy-MM-dd').format(endDate);
+      // Load current target with verification
+      final targetData = await _databaseHelper.getActiveTarget();
+      if (targetData != null && _verifyDataOwnership(targetData)) {
+        currentTarget = targetData;
+      } else {
+        currentTarget = null;
+        print(
+            'Warning: Active target not found or ownership verification failed');
+      }
 
-      return await _databaseHelper.getDailyUsageByDateRange(
-          startDateStr, endDateStr);
+      // Load usage data
+      final now = DateTime.now();
+      final weekAgo = now.subtract(const Duration(days: 7));
+      final monthAgo = DateTime(now.year, now.month - 1, now.day);
+      final today = DateFormat('yyyy-MM-dd').format(now);
+      final yesterday = DateFormat('yyyy-MM-dd')
+          .format(now.subtract(const Duration(days: 1)));
+
+      // Get today's usage with verification
+      final todayUsageData =
+          await _databaseHelper.getDailyUsageByDateRange(today, today, userId);
+      final verifiedTodayData = _filterDataByCurrentUser(todayUsageData);
+      _todayUsage = verifiedTodayData.fold(
+          0.0, (sum, usage) => sum + _convertToKwh(usage));
+
+      // Get yesterday's usage with verification
+      final yesterdayUsageData = await _databaseHelper.getDailyUsageByDateRange(
+          yesterday, yesterday, userId);
+      final verifiedYesterdayData =
+          _filterDataByCurrentUser(yesterdayUsageData);
+      _yesterdayUsage = verifiedYesterdayData.fold(
+          0.0, (sum, usage) => sum + _convertToKwh(usage));
+
+      // Get weekly usage with verification
+      final weeklyUsageData =
+          await _databaseHelper.getUsageInDateRange(userId, weekAgo, now);
+      final verifiedWeeklyData = _filterDataByCurrentUser(weeklyUsageData);
+      weeklyUsage = verifiedWeeklyData.fold(
+          0.0, (sum, usage) => sum + _convertToKwh(usage));
+
+      // Get monthly usage with verification
+      final monthlyUsageData =
+          await _databaseHelper.getUsageInDateRange(userId, monthAgo, now);
+      final verifiedMonthlyData = _filterDataByCurrentUser(monthlyUsageData);
+      monthlyUsage = verifiedMonthlyData.fold(
+          0.0, (sum, usage) => sum + _convertToKwh(usage));
+
+      // Get recent usage with verification (last 5 entries)
+      final recentUsageData = await _databaseHelper.getRecentUsage(userId, 5);
+      recentUsage = _filterDataByCurrentUser(recentUsageData);
+
+      // Get daily usage data with verification (last 30 days for charts/lists)
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+      final dailyUsageData =
+          await _databaseHelper.getUsageInDateRange(userId, thirtyDaysAgo, now);
+      _dailyUsageData = _filterDataByCurrentUser(dailyUsageData);
+
+      print('Data loaded successfully for user: $userId');
     } catch (e) {
-      print('Error getting weekly usage stats: $e');
-      return [];
+      print('Error loading home data: $e');
+      rethrow;
     }
   }
 
-  // Method untuk mendapatkan rata-rata penggunaan harian
-  double get averageDailyUsage {
-    if (dailyUsageData.isEmpty) return 0.0;
+  // Enhanced refreshData method with verification
+  Future<void> refreshData() async {
+    try {
+      final userId = _getCurrentUserId();
+      if (userId == null) throw Exception('User not authenticated');
 
-    final totalDays = dailyUsageData.length;
-    return weeklyUsage / totalDays;
-  }
+      print('Refreshing data for user: $userId');
 
-  // Method untuk prediksi penggunaan bulanan
-  double get predictedMonthlyUsage {
-    return averageDailyUsage * 30;
-  }
+      // Clear all data
+      _clearAllData();
 
-  // Method untuk mendapatkan trend penggunaan
-  String get usageTrend {
-    if (todayUsage > yesterdayUsage) {
-      return 'increasing';
-    } else if (todayUsage < yesterdayUsage) {
-      return 'decreasing';
-    } else {
-      return 'stable';
+      // Reload all data
+      await loadData();
+
+      print('Data refreshed successfully for user: $userId');
+    } catch (e) {
+      print('Error refreshing home data: $e');
+      rethrow;
     }
   }
 
-  // Method untuk mendapatkan efisiensi target
-  double get targetEfficiency {
-    if (targetValue == 0) return 0.0;
-    return (targetValue - weeklyUsage) / targetValue * 100;
+  // Method to check if current user is still authenticated
+  bool isUserAuthenticated() {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      return userId != null && userId == _currentUserId;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Method to handle user logout
+  void handleUserLogout() {
+    _currentUserId = null;
+    _clearAllData();
+    print('User data cleared after logout');
   }
 }

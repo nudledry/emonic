@@ -21,6 +21,9 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = true;
 
+  // Add field to track current user
+  String? _currentUserId;
+
   // Daftar opsi untuk dropdown (sama dengan target)
   List<String> golonganOptions = [
     "R-1/TR Daya 900 VA",
@@ -40,21 +43,103 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
   void initState() {
     super.initState();
     selectedDate = DateTime.now();
-    _loadActiveTarget();
+    _verifyUserAndLoadData();
   }
 
-  // Fungsi untuk memuat target yang sedang aktif
+  // Method to verify user authentication and get current user ID
+  String? _getCurrentUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showErrorAndNavigateBack('Anda harus login untuk mengakses halaman ini');
+      return null;
+    }
+
+    // Update current user ID if changed
+    if (_currentUserId != user.uid) {
+      _currentUserId = user.uid;
+    }
+
+    return _currentUserId;
+  }
+
+  // Method to verify user and load data
+  Future<void> _verifyUserAndLoadData() async {
+    try {
+      final userId = _getCurrentUserId();
+      if (userId != null) {
+        await _loadActiveTarget();
+      }
+    } catch (e) {
+      print('Error verifying user: $e');
+      _showErrorAndNavigateBack(
+          'Terjadi kesalahan saat memverifikasi pengguna');
+    }
+  }
+
+  // Method to verify data ownership
+  bool _verifyDataOwnership(Map<String, dynamic> data) {
+    final currentUserId = _getCurrentUserId();
+    final dataUserId = data['userId'] as String?;
+
+    if (currentUserId == null ||
+        dataUserId == null ||
+        dataUserId != currentUserId) {
+      print(
+          'Warning: Data ownership mismatch. Expected: $currentUserId, Found: $dataUserId');
+      return false;
+    }
+
+    return true;
+  }
+
+  // Method to show error and navigate back
+  void _showErrorAndNavigateBack(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppColors.red,
+        ),
+      );
+
+      // Navigate back after showing error
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      });
+    }
+  }
+
+  // Enhanced function to load active target with verification
   Future<void> _loadActiveTarget() async {
     try {
+      final userId = _getCurrentUserId();
+      if (userId == null) return;
+
       final activeTarget = await DatabaseHelper().getActiveTarget();
 
       if (activeTarget != null) {
-        setState(() {
-          selectedGolongan = activeTarget['golongan'];
-          _isLoading = false;
-        });
+        // Verify that the target belongs to current user
+        if (_verifyDataOwnership(activeTarget)) {
+          setState(() {
+            selectedGolongan = activeTarget['golongan'];
+            _isLoading = false;
+          });
+          print('Active target loaded successfully for user: $userId');
+        } else {
+          // Target doesn't belong to current user
+          print('Warning: Active target does not belong to current user');
+          setState(() {
+            selectedGolongan = null;
+            _isLoading = false;
+          });
+        }
       } else {
+        // No active target found
+        print('No active target found for user: $userId');
         setState(() {
+          selectedGolongan = null;
           _isLoading = false;
         });
       }
@@ -63,11 +148,23 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
       setState(() {
         _isLoading = false;
       });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal memuat data target: $e'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
     }
   }
 
   // Fungsi untuk menampilkan date picker
   Future<void> pickDate() async {
+    // Verify user before allowing date selection
+    if (_getCurrentUserId() == null) return;
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate ?? DateTime.now(),
@@ -94,23 +191,18 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
     }
   }
 
-  // Fungsi untuk menyimpan data ke SQLite
+  // Enhanced function to save data with user verification
   void _saveToDatabase() async {
     if (_formKey.currentState?.validate() ?? false) {
       if (selectedGolongan != null &&
           selectedParameter != null &&
           selectedDate != null &&
           nilaiController.text.isNotEmpty) {
-        // Check if user is authenticated
-        final userId = FirebaseAuth.instance.currentUser?.uid;
+        // Verify user authentication
+        final userId = _getCurrentUserId();
         if (userId == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                  "Anda harus login untuk menyimpan data penggunaan"),
-              backgroundColor: AppColors.red,
-            ),
-          );
+          _showErrorAndNavigateBack(
+              "Anda harus login untuk menyimpan data penggunaan");
           return;
         }
 
@@ -125,18 +217,28 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
             ),
           );
 
-          await DatabaseHelper().insertDailyUsage({
-            'userId': userId, // Add userId to the data
+          // Prepare data with user verification
+          final dataToSave = {
+            'userId': userId, // Ensure userId is included
             'golongan': selectedGolongan!,
             'parameter': selectedParameter!,
             'nilai': double.parse(nilaiController.text),
             'tanggal': DateFormat('yyyy-MM-dd').format(selectedDate!),
             'catatan': catatanController.text,
             'created_at': DateTime.now().toIso8601String(),
-          });
+          };
+
+          // Verify data before saving
+          if (!_verifyDataOwnership(dataToSave)) {
+            Navigator.pop(context);
+            _showErrorAndNavigateBack("Gagal memverifikasi kepemilikan data");
+            return;
+          }
+
+          await DatabaseHelper().insertDailyUsage(dataToSave);
 
           Navigator.pop(context); // Close loading dialog
-          Navigator.pop(context); // Close input screen
+          Navigator.pop(context); // Close current screen
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -144,8 +246,12 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
               backgroundColor: AppColors.green,
             ),
           );
+
+          print('Data saved successfully for user: $userId');
         } catch (e) {
-          Navigator.pop(context); // Close loading dialog
+          Navigator.pop(context);
+          print('Error saving data: $e');
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text("Terjadi kesalahan: $e"),
@@ -157,18 +263,32 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
     }
   }
 
-  // Fungsi untuk memeriksa apakah semua field telah terisi
+  // Enhanced function to check if form is filled with user verification
   bool _isFormFilled() {
+    // Check if user is still authenticated
+    if (_getCurrentUserId() == null) return false;
+
     return selectedGolongan != null &&
         selectedParameter != null &&
         selectedDate != null &&
         nilaiController.text.isNotEmpty;
   }
 
+  // Method to check if user is still authenticated
+  bool _isUserAuthenticated() {
+    final user = FirebaseAuth.instance.currentUser;
+    return user != null && user.uid == _currentUserId;
+  }
+
   String get _estimatedConversion {
+    // Verify user before showing conversion
+    if (_getCurrentUserId() == null) return '';
+
     if (nilaiController.text.isEmpty ||
         selectedGolongan == null ||
-        selectedParameter == null) return '';
+        selectedParameter == null) {
+      return '';
+    }
 
     final nilai = double.tryParse(nilaiController.text) ?? 0.0;
     if (nilai <= 0) return '';
@@ -183,7 +303,22 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
   }
 
   @override
+  void dispose() {
+    // Clear user data when widget is disposed
+    _currentUserId = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Check if user is still authenticated
+    if (!_isUserAuthenticated()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showErrorAndNavigateBack('Sesi login telah berakhir');
+      });
+      return const SizedBox.shrink();
+    }
+
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
@@ -328,8 +463,12 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
                             label: "Pilih Golongan",
                             value: selectedGolongan,
                             items: golonganOptions,
-                            onChanged: (value) =>
-                                setState(() => selectedGolongan = value),
+                            onChanged: (value) {
+                              // Verify user before allowing changes
+                              if (_getCurrentUserId() != null) {
+                                setState(() => selectedGolongan = value);
+                              }
+                            },
                             icon: Icons.home,
                           ),
                           const SizedBox(height: 20),
@@ -340,8 +479,12 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
                             label: "Pilih Parameter",
                             value: selectedParameter,
                             items: parameterOptions,
-                            onChanged: (value) =>
-                                setState(() => selectedParameter = value),
+                            onChanged: (value) {
+                              // Verify user before allowing changes
+                              if (_getCurrentUserId() != null) {
+                                setState(() => selectedParameter = value);
+                              }
+                            },
                             icon: Icons.track_changes,
                           ),
                           const SizedBox(height: 20),

@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'dart:developer';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:user_repository/user_repository.dart';
@@ -15,13 +15,17 @@ class AuthenticationBloc
   AuthenticationBloc({required this.userRepository})
       : super(const AuthenticationState.unknown()) {
     _userSubscription = userRepository.user.listen((user) {
+      log('UserRepository stream emitted user: $user');
       add(AuthenticationUserChanged(user));
     });
 
     on<AuthenticationUserChanged>((event, emit) {
+      log('AuthenticationUserChanged event received: ${event.user}');
       if (event.user != MyUser.empty && event.user != null) {
+        log('Emitting authenticated state');
         emit(AuthenticationState.authenticated(event.user!));
       } else {
+        log('Emitting unauthenticated state');
         emit(const AuthenticationState.unauthenticated());
       }
     });

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:emonic/services/home_data_service.dart';
-import 'package:emonic/screens/usage/daily_usage_screen.dart';
 import 'package:emonic/constants/colors.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -19,7 +18,7 @@ class ConsumptionChartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -36,7 +35,7 @@ class ConsumptionChartCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _buildSummary(),
           const SizedBox(height: 16),
           SizedBox(
@@ -51,10 +50,13 @@ class ConsumptionChartCard extends StatelessWidget {
   Widget _buildHeader() {
     return Row(
       children: [
+        Icon(Icons.insert_chart, color: AppColors.primaryBlue),
+        const SizedBox(width: 8),
         Text(
-          'Electricity Consumption (Last 7 Days)',
+          'Penggunaan Energi Mingguan',
           style: TextStyle(
             fontWeight: FontWeight.bold,
+            fontSize: 16,
             color: AppColors.black,
           ),
         ),
@@ -74,14 +76,14 @@ class ConsumptionChartCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Total: ${dataService.weeklyUsage.toStringAsFixed(2)} kWh',
+          'Total: ${dataService.weeklyUsageInKwh.toStringAsFixed(2)} kWh',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
             color: AppColors.primaryBlue,
           ),
         ),
-        if (dataService.currentTarget != null)
+        if (dataService.currentTarget != null) ...[
           Text(
             'Target: ${dataService.targetValue.toStringAsFixed(2)} kWh',
             style: TextStyle(
@@ -89,6 +91,7 @@ class ConsumptionChartCard extends StatelessWidget {
               color: AppColors.textGrey,
             ),
           ),
+        ],
       ],
     );
   }
@@ -118,22 +121,6 @@ class ConsumptionChartCard extends StatelessWidget {
               color: AppColors.textGrey,
               fontSize: 14,
             ),
-          ),
-          const SizedBox(height: 8),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const DailyUsageScreen(),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryBlue,
-              foregroundColor: AppColors.white,
-            ),
-            child: const Text('Add Data'),
           ),
         ],
       ),
@@ -167,12 +154,12 @@ class ConsumptionChartCard extends StatelessWidget {
 
     for (int i = 6; i >= 0; i--) {
       final date = DateTime.now().subtract(Duration(days: i));
-      DateFormat('yyyy-MM-dd').format(date);
       dates.add(DateFormat('MM/dd').format(date));
 
-      // Target line (daily target = weekly target / 7)
+      // **UPDATE: Target sudah dalam kWh, jadi perhitungan harian lebih sederhana**
       if (dataService.targetValue > 0) {
-        double dailyTarget = dataService.targetValue / 7;
+        // Hitung target harian berdasarkan durasi target
+        double dailyTarget = _calculateDailyTarget();
         targetSpots.add(FlSpot((6 - i).toDouble(), dailyTarget));
       }
     }
@@ -184,39 +171,39 @@ class ConsumptionChartCard extends StatelessWidget {
     );
   }
 
+  double _calculateDailyTarget() {
+    if (dataService.currentTarget == null || dataService.targetValue <= 0) {
+      return 0.0;
+    }
+
+    // Ambil durasi target dalam hari
+    final durationDays = dataService.currentTarget!['duration_days'] ?? 7;
+
+    // Hitung target harian
+    return dataService.targetValue / durationDays;
+  }
+
   List<FlSpot> _generateUsageSpots() {
     List<FlSpot> usageSpots = [];
-    List<String> dates = [];
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
     for (int i = 6; i >= 0; i--) {
       final date = DateTime.now().subtract(Duration(days: i));
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
-      dates.add(DateFormat('MM/dd').format(date));
 
-      // Filter dan hitung usage hanya untuk parameter "Daya Listrik (kWh)" dan user saat ini
       double dayUsage = 0.0;
-      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
       for (var usage in dataService.dailyUsageData) {
-        // Check if usage belongs to current user (if userId field exists)
+        // Check if usage belongs to current user
         bool belongsToCurrentUser = true;
         if (usage.containsKey('userId') && currentUserId != null) {
           belongsToCurrentUser = usage['userId'] == currentUserId;
         }
 
-        if (usage['tanggal'] == dateStr &&
-            usage['parameter'] == 'Daya Listrik (kWh)' &&
-            belongsToCurrentUser) {
-          double nilai = 0.0;
-
-          // Handle berbagai tipe data untuk nilai
-          if (usage['nilai'] is String) {
-            nilai = double.tryParse(usage['nilai']) ?? 0.0;
-          } else if (usage['nilai'] is num) {
-            nilai = usage['nilai'].toDouble();
-          }
-
-          dayUsage += nilai;
+        if (usage['tanggal'] == dateStr && belongsToCurrentUser) {
+          // **UPDATE: Data usage sudah dikonversi saat penyimpanan, langsung ambil nilai**
+          double nilaiKwh = _extractUsageValue(usage);
+          dayUsage += nilaiKwh;
         }
       }
 
@@ -226,28 +213,38 @@ class ConsumptionChartCard extends StatelessWidget {
     return usageSpots;
   }
 
+  double _extractUsageValue(Map<String, dynamic> usage) {
+    double nilai = 0.0;
+
+    // Parse nilai yang sudah disimpan dalam kWh
+    if (usage['nilai'] is String) {
+      nilai = double.tryParse(usage['nilai']) ?? 0.0;
+    } else if (usage['nilai'] is num) {
+      nilai = usage['nilai'].toDouble();
+    }
+
+    return nilai;
+  }
+
   FlGridData _buildGridData() {
     double maxUsage = 0.0;
 
-    // Cari nilai maksimum untuk menentukan interval grid
+    // Cari nilai maksimum dari data usage
     for (var usage in dataService.dailyUsageData) {
-      if (usage['parameter'] == 'Daya Listrik (kWh)') {
-        double nilai = 0.0;
-        if (usage['nilai'] is String) {
-          nilai = double.tryParse(usage['nilai']) ?? 0.0;
-        } else if (usage['nilai'] is num) {
-          nilai = usage['nilai'].toDouble();
-        }
-        if (nilai > maxUsage) maxUsage = nilai;
-      }
+      double nilaiKwh = _extractUsageValue(usage);
+      if (nilaiKwh > maxUsage) maxUsage = nilaiKwh;
     }
+
+    // Bandingkan dengan target harian
+    double dailyTarget = _calculateDailyTarget();
+    if (dailyTarget > maxUsage) maxUsage = dailyTarget;
 
     double interval = maxUsage > 0 ? maxUsage / 5 : 10;
 
     return FlGridData(
       show: true,
       drawVerticalLine: false,
-      horizontalInterval: interval,
+      horizontalInterval: interval > 0 ? interval : 1,
       getDrawingHorizontalLine: (value) {
         return FlLine(
           color: AppColors.grey.withValues(alpha: 0.3),

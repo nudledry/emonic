@@ -161,7 +161,8 @@ class DialogHelper {
                 ),
                 ElevatedButton.icon(
                   onPressed: () => Navigator.pop(context, true),
-                  icon: const Icon(Icons.delete, size: 16),
+                  icon: const Icon(Icons.delete,
+                      color: AppColors.white, size: 16),
                   label: const Text("Hapus"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.red,

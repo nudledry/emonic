@@ -46,17 +46,6 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
     }
   }
 
-  bool get _isOverTarget =>
-      widget.dataService.weeklyUsage > widget.dataService.targetValue;
-  double get _progressPercentage =>
-      (widget.dataService.weeklyUsage / widget.dataService.targetValue)
-          .clamp(0.0, 1.0);
-  double get _overagePercentage =>
-      widget.dataService.weeklyUsage > widget.dataService.targetValue
-          ? (widget.dataService.weeklyUsage - widget.dataService.targetValue) /
-              widget.dataService.targetValue
-          : 0.0;
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -71,13 +60,14 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _isOverTarget
+        color: widget.dataService.isOverTarget
             ? AppColors.red.withValues(alpha: 0.1)
             : AppColors.chartBlue,
         borderRadius: BorderRadius.circular(16),
-        border:
-            _isOverTarget ? Border.all(color: AppColors.red, width: 2) : null,
-        boxShadow: _isOverTarget
+        border: widget.dataService.isOverTarget
+            ? Border.all(color: AppColors.red, width: 2)
+            : null,
+        boxShadow: widget.dataService.isOverTarget
             ? [
                 BoxShadow(
                   color: AppColors.red.withValues(alpha: 0.2),
@@ -164,9 +154,11 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           child: Icon(
-            _isOverTarget ? Icons.warning : Icons.flag,
-            color: _isOverTarget ? AppColors.red : AppColors.primaryBlue,
-            key: ValueKey(_isOverTarget),
+            widget.dataService.isOverTarget ? Icons.warning : Icons.flag,
+            color: widget.dataService.isOverTarget
+                ? AppColors.red
+                : AppColors.primaryBlue,
+            key: ValueKey(widget.dataService.isOverTarget),
           ),
         ),
         const SizedBox(width: 8),
@@ -174,7 +166,9 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
           'Target Progress',
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            color: _isOverTarget ? AppColors.red : AppColors.black,
+            color: widget.dataService.isOverTarget
+                ? AppColors.red
+                : AppColors.black,
           ),
         ),
         const Spacer(),
@@ -183,13 +177,15 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: _isOverTarget ? AppColors.red : AppColors.primaryBlue,
+              color: widget.dataService.isOverTarget
+                  ? AppColors.red
+                  : AppColors.primaryBlue,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isOverTarget) ...[
+                if (widget.dataService.isOverTarget) ...[
                   Icon(
                     Icons.warning,
                     size: 12,
@@ -198,7 +194,7 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
                   const SizedBox(width: 4),
                 ],
                 Text(
-                  _isOverTarget ? 'OVER TARGET' : 'Active',
+                  widget.dataService.isOverTarget ? 'OVER TARGET' : 'Active',
                   style: TextStyle(
                     color: AppColors.white,
                     fontSize: 10,
@@ -264,14 +260,16 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
               TextSpan(
                 text: widget.dataService.weeklyUsage.toStringAsFixed(1),
                 style: TextStyle(
-                  color: _isOverTarget ? AppColors.red : AppColors.primaryBlue,
+                  color: widget.dataService.isOverTarget
+                      ? AppColors.red
+                      : AppColors.primaryBlue,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const TextSpan(text: ' / '),
               TextSpan(
                 text:
-                    '${widget.dataService.targetValue.toStringAsFixed(1)} kWh',
+                    '${widget.dataService.targetValueInKwh.toStringAsFixed(1)} kWh',
                 style: const TextStyle(
                   fontWeight: FontWeight.w500,
                 ),
@@ -281,7 +279,7 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
         ),
 
         // Overage Warning
-        if (_isOverTarget) ...[
+        if (widget.dataService.isOverTarget) ...[
           const SizedBox(height: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -300,7 +298,7 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  'Exceeded by ${(widget.dataService.weeklyUsage - widget.dataService.targetValue).toStringAsFixed(1)} kWh',
+                  'Exceeded by ${widget.dataService.overageAmount.toStringAsFixed(1)} kWh',
                   style: TextStyle(
                     color: AppColors.red,
                     fontSize: 12,
@@ -313,25 +311,6 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
         ],
 
         const SizedBox(height: 8),
-
-        // Parameter Info
-        Row(
-          children: [
-            Icon(
-              Icons.flash_on,
-              size: 14,
-              color: AppColors.yellow,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'Parameter: ${widget.dataService.currentTarget!['parameter'] ?? 'N/A'}',
-              style: TextStyle(
-                color: AppColors.textGrey,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -339,7 +318,10 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
   Widget _buildProgressBar(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth - 32;
+        final availableWidth = constraints.maxWidth;
+
+        final clampedProgress =
+            widget.dataService.progressPercentage.clamp(0.0, 1.0);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,10 +338,11 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
                   ),
                 ),
                 Text(
-                  '${(_progressPercentage * 100).toStringAsFixed(0)}%',
+                  '${(clampedProgress * 100).toStringAsFixed(0)}%',
                   style: TextStyle(
-                    color:
-                        _isOverTarget ? AppColors.red : AppColors.primaryBlue,
+                    color: widget.dataService.isOverTarget
+                        ? AppColors.red
+                        : AppColors.primaryBlue,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
@@ -382,12 +365,13 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 500),
                   height: 8,
-                  width: availableWidth * _progressPercentage,
+                  width: availableWidth * clampedProgress,
                   decoration: BoxDecoration(
-                    color:
-                        _isOverTarget ? AppColors.red : AppColors.primaryBlue,
+                    color: widget.dataService.isOverTarget
+                        ? AppColors.red
+                        : AppColors.primaryBlue,
                     borderRadius: BorderRadius.circular(4),
-                    boxShadow: _isOverTarget
+                    boxShadow: widget.dataService.isOverTarget
                         ? [
                             BoxShadow(
                               color: AppColors.red.withValues(alpha: 0.3),
@@ -398,15 +382,16 @@ class _TargetProgressCardState extends State<TargetProgressCard> {
                         : null,
                   ),
                 ),
-                // Overage indicator (if exceeded)
-                if (_isOverTarget)
+                if (widget.dataService.isOverTarget &&
+                    widget.dataService.overagePercentage > 0)
                   Positioned(
-                    left: availableWidth * 1.0,
+                    left: availableWidth,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 500),
                       height: 8,
-                      width:
-                          availableWidth * _overagePercentage.clamp(0.0, 0.3),
+                      width: (availableWidth *
+                              widget.dataService.overagePercentage)
+                          .clamp(0.0, availableWidth * 0.3),
                       decoration: BoxDecoration(
                         color: AppColors.red.withValues(alpha: 0.6),
                         borderRadius: const BorderRadius.only(
