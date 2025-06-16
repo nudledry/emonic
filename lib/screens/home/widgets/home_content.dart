@@ -30,13 +30,18 @@ class _HomeContentState extends State<HomeContent> {
 
     try {
       await _dataService.loadData();
+      // Pastikan weekly usage juga diload dengan konversi
+      await _dataService.loadWeeklyUsage();
+
       print('DEBUG: Data service loaded successfully');
       print('DEBUG: Current target: ${_dataService.currentTarget}');
       print('DEBUG: Target value: ${_dataService.targetValue}');
-      print('DEBUG: Progress: ${_dataService.progressPercentage}');
+      print('DEBUG: Today usage (kWh): ${_dataService.todayUsage}');
+      print('DEBUG: Weekly usage (kWh): ${_dataService.weeklyUsage}');
+      print(
+          'DEBUG: Weekly usage from getter (kWh): ${_dataService.weeklyUsageInKwh}');
     } catch (e) {
       print('ERROR: Failed to load data: $e');
-      // Optionally show error to user
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to load data: $e')),

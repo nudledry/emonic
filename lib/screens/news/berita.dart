@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 class BeritaScreen extends StatefulWidget {
   final String? userName;
 
-  const BeritaScreen({super.key, this.userName});
+  const BeritaScreen({Key? key, this.userName}) : super(key: key);
 
   @override
   _BeritaScreenState createState() => _BeritaScreenState();
@@ -18,13 +18,13 @@ class _BeritaScreenState extends State<BeritaScreen> {
   String _selectedCategory = 'Semua Kategori';
   String _searchQuery = '';
   List<NewsArticle> _newsArticles = [];
-  List<NewsArticle> _allNewsArticles = []; // Store all articles
+  List<NewsArticle> _allNewsArticles = [];
   List<NewsArticle> _breakingNews = [];
   List<String> _favoriteArticleIds = [];
   bool _isLoading = true;
   late String _userId;
 
-  final List<String> _activeTags = [];
+  List<String> _activeTags = [];
 
   final List<String> _availableTags = [
     'Energi Terbarukan',
@@ -245,26 +245,32 @@ class _BeritaScreenState extends State<BeritaScreen> {
   Future<void> _fetchNewsArticles() async {
     setState(() => _isLoading = true);
     try {
-      // Always fetch all articles first
+      print('Fetching news articles...'); // Debug log
+
       QuerySnapshot querySnapshot = await _firestore
           .collection('news')
           .orderBy('createdAt', descending: true)
           .get();
 
-      List<NewsArticle> allArticles = querySnapshot.docs
-          .map((doc) =>
-              NewsArticle.fromFirestore(doc, favoriteIds: _favoriteArticleIds))
-          .toList();
+      print('Query snapshot size: ${querySnapshot.docs.length}'); // Debug log
+
+      List<NewsArticle> allArticles = querySnapshot.docs.map((doc) {
+        print('Processing document: ${doc.id}'); // Debug log
+        print('Document data: ${doc.data()}'); // Debug log
+        return NewsArticle.fromFirestore(doc, favoriteIds: _favoriteArticleIds);
+      }).toList();
+
+      print('Total articles parsed: ${allArticles.length}'); // Debug log
 
       setState(() {
         _allNewsArticles = allArticles;
         _isLoading = false;
       });
 
-      // Apply filters after fetching
       _applyFilters();
     } catch (e) {
       print('Error fetching news articles: $e');
+      print('Error details: ${e.toString()}'); // Tambahan debug
       setState(() => _isLoading = false);
     }
   }
@@ -578,13 +584,6 @@ class _BeritaScreenState extends State<BeritaScreen> {
     final formattedDate = DateFormat('EEEE d, y').format(DateTime.now());
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context)),
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -835,7 +834,7 @@ class _BeritaScreenState extends State<BeritaScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Hi $displayName',
+        Text('Hi, $displayName!',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
         Text(formattedDate,
             style: TextStyle(color: Colors.grey[600], fontSize: 14)),
@@ -1002,205 +1001,206 @@ class _BeritaScreenState extends State<BeritaScreen> {
 
   Widget _buildNewsCard(NewsArticle article) {
     return Container(
-      margin: EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        onTap: () => _showFullArticle(article),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header with category and date
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _getCategoryColor(article.category),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      article.category,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
+        margin: EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: InkWell(
+          onTap: () => _showFullArticle(article),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header with category and date
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getCategoryColor(article.category),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        article.category,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  Text(
-                    _formatDate(article.createdAt),
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 12),
-
-              // Content
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Text content
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          article.title,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            height: 1.3,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          article.content,
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontSize: 12,
-                            height: 1.4,
-                          ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Image
-                  if (article.imageUrl.isNotEmpty) ...[
-                    SizedBox(width: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        article.imageUrl,
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: 80,
-                            height: 80,
-                            color: Colors.grey[300],
-                            child: Icon(
-                              Icons.image_not_supported,
-                              size: 30,
-                              color: Colors.grey[600],
-                            ),
-                          );
-                        },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            width: 80,
-                            height: 80,
-                            color: Colors.grey[200],
-                            child: Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        },
+                    Text(
+                      _formatDate(article.createdAt),
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 10,
                       ),
                     ),
                   ],
-                ],
-              ),
+                ),
+                SizedBox(height: 12),
 
-              SizedBox(height: 12),
-
-              // Actions
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      // Like button
-                      GestureDetector(
-                        onTap: () => _toggleLike(article),
-                        child: Row(
-                          children: [
-                            Icon(
-                              article.isLiked
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: article.isLiked ? Colors.red : Colors.grey,
-                              size: 18,
+                // Content
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Text content
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            article.title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              height: 1.3,
                             ),
-                            SizedBox(width: 4),
-                            Text(
-                              '${article.likes}',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 12,
-                              ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            article.content,
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                              height: 1.4,
                             ),
-                          ],
-                        ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
+                    ),
 
-                      SizedBox(width: 16),
-
-                      // Rating
-                      GestureDetector(
-                        onTap: () => _showRatingDialog(article),
-                        child: Row(
-                          children: [
-                            Icon(Icons.star, color: Colors.amber, size: 18),
-                            SizedBox(width: 4),
-                            Text(
-                              article.averageRating > 0
-                                  ? article.averageRating.toStringAsFixed(1)
-                                  : '0.0',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 12,
+                    // Image
+                    if (article.imageUrl.isNotEmpty) ...[
+                      SizedBox(width: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          article.imageUrl,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 80,
+                              height: 80,
+                              color: Colors.grey[300],
+                              child: Icon(
+                                Icons.image_not_supported,
+                                size: 30,
+                                color: Colors.grey[600],
                               ),
-                            ),
-                          ],
+                            );
+                          },
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              width: 80,
+                              height: 80,
+                              color: Colors.grey[200],
+                              child: Center(
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
-                  ),
+                  ],
+                ),
 
-                  // Favorite button
-                  GestureDetector(
-                    onTap: () => _toggleFavorite(article),
-                    child: Icon(
-                      article.isFavorite
-                          ? Icons.bookmark
-                          : Icons.bookmark_border,
-                      color: article.isFavorite ? Colors.blue : Colors.grey,
-                      size: 20,
+                SizedBox(height: 12),
+
+                // Actions
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        // Like button
+                        GestureDetector(
+                          onTap: () => _toggleLike(article),
+                          child: Row(
+                            children: [
+                              Icon(
+                                article.isLiked
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                color:
+                                    article.isLiked ? Colors.red : Colors.grey,
+                                size: 18,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                '${article.likes}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        SizedBox(width: 16),
+
+                        // Rating
+                        GestureDetector(
+                          onTap: () => _showRatingDialog(article),
+                          child: Row(
+                            children: [
+                              Icon(Icons.star, color: Colors.amber, size: 18),
+                              SizedBox(width: 4),
+                              Text(
+                                article.averageRating > 0
+                                    ? article.averageRating.toStringAsFixed(1)
+                                    : '0.0',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ],
+
+                    // Favorite button
+                    GestureDetector(
+                      onTap: () => _toggleFavorite(article),
+                      child: Icon(
+                        article.isFavorite
+                            ? Icons.bookmark
+                            : Icons.bookmark_border,
+                        color: article.isFavorite ? Colors.blue : Colors.grey,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 
   Color _getCategoryColor(String category) {
@@ -1270,18 +1270,38 @@ class NewsArticle {
   factory NewsArticle.fromFirestore(DocumentSnapshot doc,
       {List<String> favoriteIds = const []}) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+    // Handle createdAt field - bisa berupa String atau Timestamp
+    Timestamp createdAtTimestamp;
+    if (data['createdAt'] is String) {
+      // Jika createdAt adalah string, parse ke DateTime lalu convert ke Timestamp
+      try {
+        DateTime parsedDate = DateTime.parse(data['createdAt']);
+        createdAtTimestamp = Timestamp.fromDate(parsedDate);
+      } catch (e) {
+        // Jika parsing gagal, gunakan waktu sekarang
+        print('Error parsing createdAt string: ${data['createdAt']}');
+        createdAtTimestamp = Timestamp.now();
+      }
+    } else if (data['createdAt'] is Timestamp) {
+      createdAtTimestamp = data['createdAt'];
+    } else {
+      // Jika field tidak ada atau null, gunakan waktu sekarang
+      createdAtTimestamp = Timestamp.now();
+    }
+
     return NewsArticle(
       id: doc.id,
       title: data['title'] ?? '',
       content: data['content'] ?? '',
       category: data['category'] ?? '',
       imageUrl: data['imageUrl'] ?? '',
-      createdAt: data['createdAt'] ?? Timestamp.now(),
+      createdAt: createdAtTimestamp,
       author: data['author'] ?? '',
       isBreaking: data['isBreaking'] ?? false,
       likes: data['likes'] ?? 0,
       isFavorite: favoriteIds.contains(doc.id),
-      isLiked: false, // This should be fetched separately
+      isLiked: false,
       averageRating: (data['averageRating'] ?? 0.0).toDouble(),
       totalRatings: data['totalRatings'] ?? 0,
     );
@@ -1889,155 +1909,154 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   Widget _buildFavoriteCard(NewsArticle article) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        onTap: () => _showFullArticle(article),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Image
-              if (article.imageUrl.isNotEmpty) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    article.imageUrl,
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 80,
-                        height: 80,
-                        color: Colors.grey[300],
-                        child: Icon(Icons.image_not_supported,
-                            color: Colors.grey[600]),
-                      );
-                    },
+        margin: EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: InkWell(
+          onTap: () => _showFullArticle(article),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Image
+                if (article.imageUrl.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      article.imageUrl,
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: 80,
+                          height: 80,
+                          color: Colors.grey[300],
+                          child: Icon(Icons.image_not_supported,
+                              color: Colors.grey[600]),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                ],
+
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category and remove button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getCategoryColor(article.category),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              article.category,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => _removeFavorite(article),
+                            child: Icon(
+                              Icons.bookmark,
+                              color: Colors.red,
+                              size: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+
+                      // Title
+                      Text(
+                        article.title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4),
+
+                      // Content preview
+                      Text(
+                        article.content,
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 8),
+
+                      // Date and stats
+                      Row(
+                        children: [
+                          Text(
+                            _formatDate(article.createdAt),
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 10,
+                            ),
+                          ),
+                          Spacer(),
+                          if (article.likes > 0) ...[
+                            Icon(Icons.favorite, color: Colors.red, size: 14),
+                            SizedBox(width: 2),
+                            Text(
+                              '${article.likes}',
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 10,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                          ],
+                          if (article.averageRating > 0) ...[
+                            Icon(Icons.star, color: Colors.amber, size: 14),
+                            SizedBox(width: 2),
+                            Text(
+                              article.averageRating.toStringAsFixed(1),
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                SizedBox(width: 12),
               ],
-
-              // Content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Category and remove button
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _getCategoryColor(article.category),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            article.category,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => _removeFavorite(article),
-                          child: Icon(
-                            Icons.bookmark,
-                            color: Colors.red,
-                            size: 20,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 8),
-
-                    // Title
-                    Text(
-                      article.title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: 4),
-
-                    // Content preview
-                    Text(
-                      article.content,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: 8),
-
-                    // Date and stats
-                    Row(
-                      children: [
-                        Text(
-                          _formatDate(article.createdAt),
-                          style: TextStyle(
-                            color: Colors.grey.shade500,
-                            fontSize: 10,
-                          ),
-                        ),
-                        Spacer(),
-                        if (article.likes > 0) ...[
-                          Icon(Icons.favorite, color: Colors.red, size: 14),
-                          SizedBox(width: 2),
-                          Text(
-                            '${article.likes}',
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 10,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                        ],
-                        if (article.averageRating > 0) ...[
-                          Icon(Icons.star, color: Colors.amber, size: 14),
-                          SizedBox(width: 2),
-                          Text(
-                            article.averageRating.toStringAsFixed(1),
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 
   Color _getCategoryColor(String category) {

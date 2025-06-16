@@ -192,13 +192,15 @@ class _TargetPenggunaanScreenState extends State<TargetPenggunaanScreen> {
             ),
           );
 
+          final inputValue = double.parse(targetController.text);
+
           Map<String, dynamic> targetData = {
             'userId': userId,
             'golongan': selectedGolongan,
             'parameter': selectedParameter,
             'startDate': startDate!.toIso8601String(),
             'endDate': endDate!.toIso8601String(),
-            'target': targetController.text,
+            'target': inputValue.toString(),
             'period': selectedPeriod,
             'duration_days': _getDurationInDays(),
             'createdAt': DateTime.now().toIso8601String(),

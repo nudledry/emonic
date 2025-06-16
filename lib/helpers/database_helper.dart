@@ -9,6 +9,11 @@ class DatabaseHelper {
 
   static Database? _database;
 
+  // Cache untuk active target
+  Map<String, dynamic>? _cachedActiveTarget;
+  DateTime? _activeTargetCacheTime;
+  static const Duration _cacheValidDuration = Duration(minutes: 5);
+
   Future<Database> get database async {
     if (_database != null && _database!.isOpen) {
       return _database!;
@@ -19,17 +24,28 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'emonic.db');
+    // await deleteDatabase(path); // HAPUS BARIS INI!
+
     return await openDatabase(
       path,
-      version: 1,
+      version: 3,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade, // Tambahkan untuk handle version upgrade
       readOnly: false,
       singleInstance: true,
     );
   }
 
+  // Tambahkan method untuk handle database upgrade
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < newVersion) {
+      // Handle database schema changes jika diperlukan
+      print('Database upgraded from version $oldVersion to $newVersion');
+    }
+  }
+
   Future<void> _onCreate(Database db, int version) async {
-    // Create daily_usage table dengan userId column
+    // Create daily_usage table
     await db.execute('''
       CREATE TABLE daily_usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,11 +55,12 @@ class DatabaseHelper {
         nilai REAL NOT NULL,
         tanggal TEXT NOT NULL,
         catatan TEXT,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
 
-    // Create targets table dengan struktur lengkap
+    // Create targets table
     await db.execute('''
       CREATE TABLE targets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,435 +69,380 @@ class DatabaseHelper {
         parameter TEXT NOT NULL,
         startDate TEXT NOT NULL,
         endDate TEXT NOT NULL,
-        target TEXT NOT NULL,
+        target REAL NOT NULL,
         period TEXT NOT NULL DEFAULT '1 Bulan',
         duration_days INTEGER NOT NULL DEFAULT 30,
-        createdAt TEXT NOT NULL,
-        status TEXT DEFAULT 'active' CHECK(status IN ('active', 'completed', 'cancelled'))
+        createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'active' CHECK(status IN ('active', 'completed', 'cancelled', 'paused'))
       )
     ''');
 
-    // Add indexes untuk performa optimal
+    // Indexes untuk performa
     await db.execute(
-        'CREATE INDEX idx_daily_usage_user_tanggal ON daily_usage(userId, tanggal)');
+        'CREATE INDEX idx_daily_usage_user_tanggal ON daily_usage(userId, tanggal DESC)');
     await db.execute(
-        'CREATE INDEX idx_daily_usage_parameter ON daily_usage(parameter)');
+        'CREATE INDEX idx_daily_usage_user_parameter ON daily_usage(userId, parameter)');
     await db.execute(
-        'CREATE INDEX idx_daily_usage_golongan ON daily_usage(golongan)');
+        'CREATE INDEX idx_daily_usage_composite ON daily_usage(userId, parameter, tanggal DESC)');
     await db.execute(
-        'CREATE INDEX idx_targets_user_date ON targets(userId, endDate)');
-    await db.execute('CREATE INDEX idx_targets_status ON targets(status)');
-
-    print('Database created successfully with version $version');
+        'CREATE INDEX idx_targets_user_status ON targets(userId, status)');
+    await db.execute(
+        'CREATE INDEX idx_targets_active ON targets(status, endDate) WHERE status = "active"');
   }
 
   // ===== DAILY USAGE METHODS =====
   Future<int> insertDailyUsage(Map<String, dynamic> usage) async {
-    try {
-      final db = await database;
-      // Ensure userId is included in the data
-      if (!usage.containsKey('userId')) {
-        throw Exception('userId is required for daily usage entry');
-      }
-      return await db.insert('daily_usage', usage);
-    } catch (e) {
-      print('Error inserting daily usage: $e');
-      rethrow;
+    final db = await database;
+
+    if (!usage.containsKey('userId') ||
+        usage['userId'] == null ||
+        usage['userId'].toString().isEmpty) {
+      throw Exception('userId is required');
     }
+
+    usage['created_at'] = DateTime.now().toIso8601String();
+    usage['updated_at'] = DateTime.now().toIso8601String();
+
+    return await db.insert('daily_usage', usage);
+  }
+
+  Future<void> insertDailyUsageBatch(
+      List<Map<String, dynamic>> usageList) async {
+    final db = await database;
+    final batch = db.batch();
+
+    for (final usage in usageList) {
+      if (!usage.containsKey('userId') || usage['userId'] == null) {
+        throw Exception('userId is required for all usage entries');
+      }
+
+      usage['created_at'] = DateTime.now().toIso8601String();
+      usage['updated_at'] = DateTime.now().toIso8601String();
+
+      batch.insert('daily_usage', usage);
+    }
+
+    await batch.commit(noResult: true);
   }
 
   Future<List<Map<String, dynamic>>> getDailyUsage([String? userId]) async {
-    try {
-      final db = await database;
+    final db = await database;
 
-      if (userId != null) {
-        // Filter by userId if provided
-        return await db.query(
-          'daily_usage',
-          where: 'userId = ?',
-          whereArgs: [userId],
-          orderBy: 'tanggal DESC, created_at DESC',
-        );
-      } else {
-        // Return all data (for backward compatibility)
-        return await db.query(
-          'daily_usage',
-          orderBy: 'tanggal DESC, created_at DESC',
-        );
-      }
-    } catch (e) {
-      print('Error getting daily usage: $e');
-
-      // Handle case where userId column doesn't exist (backward compatibility)
-      if (e.toString().contains('no such column: userId')) {
-        try {
-          final db = await database;
-          return await db.query(
-            'daily_usage',
-            orderBy: 'tanggal DESC, created_at DESC',
-          );
-        } catch (e2) {
-          print('Error in fallback query: $e2');
-          return [];
-        }
-      }
-      return [];
+    if (userId != null && userId.isNotEmpty) {
+      return await db.query(
+        'daily_usage',
+        where: 'userId = ?',
+        whereArgs: [userId],
+        orderBy: 'tanggal DESC, created_at DESC',
+      );
+    } else {
+      return await db.query(
+        'daily_usage',
+        orderBy: 'tanggal DESC, created_at DESC',
+      );
     }
   }
 
   Future<List<Map<String, dynamic>>> getDailyUsageByDateRange(
-      String startDate, String endDate,
-      [String? userId]) async {
-    try {
-      final db = await database;
+    String startDate,
+    String endDate, [
+    String? userId,
+  ]) async {
+    final db = await database;
 
-      if (userId != null) {
-        return await db.query(
-          'daily_usage',
-          where: 'tanggal >= ? AND tanggal <= ? AND userId = ?',
-          whereArgs: [startDate, endDate, userId],
-          orderBy: 'tanggal DESC',
-        );
-      } else {
-        return await db.query(
-          'daily_usage',
-          where: 'tanggal >= ? AND tanggal <= ?',
-          whereArgs: [startDate, endDate],
-          orderBy: 'tanggal DESC',
-        );
-      }
-    } catch (e) {
-      print('Error getting daily usage by date range: $e');
-
-      // Handle backward compatibility
-      if (e.toString().contains('no such column: userId')) {
-        try {
-          final db = await database;
-          return await db.query(
-            'daily_usage',
-            where: 'tanggal >= ? AND tanggal <= ?',
-            whereArgs: [startDate, endDate],
-            orderBy: 'tanggal DESC',
-          );
-        } catch (e2) {
-          print('Error in fallback query: $e2');
-          return [];
-        }
-      }
-      return [];
+    if (userId != null && userId.isNotEmpty) {
+      return await db.query(
+        'daily_usage',
+        where: 'tanggal BETWEEN ? AND ? AND userId = ?',
+        whereArgs: [startDate, endDate, userId],
+        orderBy: 'tanggal DESC, created_at DESC',
+      );
+    } else {
+      return await db.query(
+        'daily_usage',
+        where: 'tanggal BETWEEN ? AND ?',
+        whereArgs: [startDate, endDate],
+        orderBy: 'tanggal DESC, created_at DESC',
+      );
     }
   }
 
   Future<double> getTotalUsageByDate(String date, [String? userId]) async {
-    try {
-      final db = await database;
+    final db = await database;
 
-      if (userId != null) {
-        final result = await db.rawQuery(
-            'SELECT SUM(nilai) as total FROM daily_usage WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)" AND userId = ?',
-            [date, userId]);
-        return (result.first['total'] as double?) ?? 0.0;
-      } else {
-        final result = await db.rawQuery(
-            'SELECT SUM(nilai) as total FROM daily_usage WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)"',
-            [date]);
-        return (result.first['total'] as double?) ?? 0.0;
-      }
-    } catch (e) {
-      print('Error getting total usage by date: $e');
-      return 0.0;
+    String query;
+    List<dynamic> args;
+
+    if (userId != null && userId.isNotEmpty) {
+      query = '''SELECT SUM(nilai) as total FROM daily_usage 
+                 WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)" AND userId = ?''';
+      args = [date, userId];
+    } else {
+      query = '''SELECT SUM(nilai) as total FROM daily_usage 
+                 WHERE tanggal = ? AND parameter = "Daya Listrik (kWh)"''';
+      args = [date];
     }
+
+    final result = await db.rawQuery(query, args);
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
   Future<int> updateDailyUsage(int id, Map<String, dynamic> usage) async {
-    try {
-      final db = await database;
-      return await db.update(
-        'daily_usage',
-        usage,
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    } catch (e) {
-      print('Error updating daily usage: $e');
-      rethrow;
-    }
+    final db = await database;
+    usage['updated_at'] = DateTime.now().toIso8601String();
+
+    return await db.update(
+      'daily_usage',
+      usage,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> deleteDailyUsage(int id) async {
-    try {
-      final db = await database;
-      return await db.delete(
-        'daily_usage',
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    } catch (e) {
-      print('Error deleting daily usage: $e');
-      rethrow;
-    }
+    final db = await database;
+    invalidateActiveTargetCache();
+
+    return await db.delete(
+      'daily_usage',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
-  // Query optimized dengan filtering
-  Future<List<Map<String, dynamic>>> getDailyUsageOptimized({
-    String? golongan,
-    String? parameter,
-    String? startDate,
-    String? endDate,
-    int? limit,
-  }) async {
-    try {
-      final db = await database;
+  Future<List<Map<String, dynamic>>> getLast7DaysUsage([String? userId]) async {
+    final db = await database;
+    final sevenDaysAgo = DateFormat('yyyy-MM-dd')
+        .format(DateTime.now().subtract(const Duration(days: 7)));
 
-      List<String> conditions = [];
-      List<dynamic> args = [];
+    String query;
+    List<dynamic> args;
 
-      if (golongan != null) {
-        conditions.add('golongan = ?');
-        args.add(golongan);
-      }
-
-      if (parameter != null) {
-        conditions.add('parameter = ?');
-        args.add(parameter);
-      }
-
-      if (startDate != null && endDate != null) {
-        conditions.add('tanggal BETWEEN ? AND ?');
-        args.addAll([startDate, endDate]);
-      }
-
-      String whereClause =
-          conditions.isNotEmpty ? 'WHERE ${conditions.join(' AND ')}' : '';
-      String limitClause = limit != null ? 'LIMIT $limit' : '';
-
-      return await db.rawQuery('''
-        SELECT * FROM daily_usage 
-        $whereClause 
-        ORDER BY tanggal DESC, created_at DESC 
-        $limitClause
-      ''', args);
-    } catch (e) {
-      print('Error in optimized daily usage query: $e');
-      return [];
+    if (userId != null && userId.isNotEmpty) {
+      query = '''SELECT tanggal, SUM(nilai) as total 
+                 FROM daily_usage 
+                 WHERE tanggal >= ? AND parameter = ? AND userId = ?
+                 GROUP BY tanggal
+                 ORDER BY tanggal ASC''';
+      args = [sevenDaysAgo, 'Daya Listrik (kWh)', userId];
+    } else {
+      query = '''SELECT tanggal, SUM(nilai) as total 
+                 FROM daily_usage 
+                 WHERE tanggal >= ? AND parameter = ?
+                 GROUP BY tanggal
+                 ORDER BY tanggal ASC''';
+      args = [sevenDaysAgo, 'Daya Listrik (kWh)'];
     }
+
+    return await db.rawQuery(query, args);
   }
 
-  // Method untuk mendapatkan usage data 7 hari terakhir (optimized untuk chart)
-  Future<List<Map<String, dynamic>>> getLast7DaysUsage() async {
-    try {
-      final db = await database;
-      final sevenDaysAgo = DateFormat('yyyy-MM-dd')
-          .format(DateTime.now().subtract(const Duration(days: 7)));
+  Future<Map<String, double>> getDailyTotals(int days, [String? userId]) async {
+    final db = await database;
+    final startDate = DateFormat('yyyy-MM-dd')
+        .format(DateTime.now().subtract(Duration(days: days)));
 
-      return await db.query(
-        'daily_usage',
-        where: 'tanggal >= ? AND parameter = ?',
-        whereArgs: [sevenDaysAgo, 'Daya Listrik (kWh)'],
-        orderBy: 'tanggal ASC',
-      );
-    } catch (e) {
-      print('Error getting last 7 days usage: $e');
-      return [];
+    String query;
+    List<dynamic> args;
+
+    if (userId != null && userId.isNotEmpty) {
+      query = '''SELECT tanggal, SUM(nilai) as total 
+                 FROM daily_usage 
+                 WHERE tanggal >= ? AND parameter = "Daya Listrik (kWh)" AND userId = ?
+                 GROUP BY tanggal
+                 ORDER BY tanggal ASC''';
+      args = [startDate, userId];
+    } else {
+      query = '''SELECT tanggal, SUM(nilai) as total 
+                 FROM daily_usage 
+                 WHERE tanggal >= ? AND parameter = "Daya Listrik (kWh)"
+                 GROUP BY tanggal
+                 ORDER BY tanggal ASC''';
+      args = [startDate];
     }
-  }
 
-  // Method untuk mendapatkan total usage per hari (optimized)
-  Future<Map<String, double>> getDailyTotals(int days) async {
-    try {
-      final db = await database;
-      final startDate = DateFormat('yyyy-MM-dd')
-          .format(DateTime.now().subtract(Duration(days: days)));
+    final result = await db.rawQuery(query, args);
 
-      final result = await db.rawQuery('''
-        SELECT tanggal, SUM(nilai) as total 
-        FROM daily_usage 
-        WHERE tanggal >= ? AND parameter = "Daya Listrik (kWh)"
-        GROUP BY tanggal
-        ORDER BY tanggal ASC
-      ''', [startDate]);
-
-      Map<String, double> dailyTotals = {};
-      for (var row in result) {
-        dailyTotals[row['tanggal'] as String] =
-            (row['total'] as num).toDouble();
-      }
-
-      return dailyTotals;
-    } catch (e) {
-      print('Error getting daily totals: $e');
-      return {};
+    Map<String, double> dailyTotals = {};
+    for (var row in result) {
+      dailyTotals[row['tanggal'] as String] = (row['total'] as num).toDouble();
     }
+
+    return dailyTotals;
   }
 
   // ===== TARGETS METHODS =====
-
   Future<int> insertTarget(Map<String, dynamic> target) async {
-    try {
-      final db = await database;
-      return await db.insert('targets', target);
-    } catch (e) {
-      print('Error inserting target: $e');
-      rethrow;
+    final db = await database;
+
+    if (!target.containsKey('userId') || target['userId'] == null) {
+      throw Exception('userId is required for target');
     }
+
+    target['createdAt'] = DateTime.now().toIso8601String();
+    target['updatedAt'] = DateTime.now().toIso8601String();
+
+    if (target['target'] is String) {
+      target['target'] = double.tryParse(target['target']) ?? 0.0;
+    }
+
+    invalidateActiveTargetCache();
+    return await db.insert('targets', target);
   }
 
   Future<List<Map<String, dynamic>>> getTargetsByUser(String userId) async {
-    try {
-      final db = await database;
-      return await db.query(
-        'targets',
-        where: 'userId = ?',
-        whereArgs: [userId],
-        orderBy: 'createdAt DESC',
-      );
-    } catch (e) {
-      print('Error getting targets by user: $e');
-      return [];
-    }
+    final db = await database;
+    return await db.query(
+      'targets',
+      where: 'userId = ?',
+      whereArgs: [userId],
+      orderBy: 'createdAt DESC',
+    );
   }
 
   Future<List<Map<String, dynamic>>> getAllTargets() async {
-    try {
-      final db = await database;
-      return await db.query('targets', orderBy: 'createdAt DESC');
-    } catch (e) {
-      print('Error getting all targets: $e');
-      return [];
-    }
+    final db = await database;
+    return await db.query('targets', orderBy: 'createdAt DESC');
   }
 
   Future<Map<String, dynamic>?> getActiveTarget() async {
-    try {
-      final db = await database;
-      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-      // Cek apakah kolom status ada
-      final tableInfo = await db.rawQuery("PRAGMA table_info(targets)");
-      final hasStatusColumn =
-          tableInfo.any((column) => column['name'] == 'status');
-
-      List<Map<String, dynamic>> result;
-
-      if (hasStatusColumn) {
-        // Jika kolom status ada, gunakan query dengan status
-        result = await db.rawQuery(
-          'SELECT * FROM targets WHERE DATE(endDate) >= DATE(?) AND status = "active" ORDER BY createdAt DESC LIMIT 1',
-          [today],
-        );
-      } else {
-        // Jika kolom status tidak ada, gunakan query tanpa status
-        result = await db.rawQuery(
-          'SELECT * FROM targets WHERE DATE(endDate) >= DATE(?) ORDER BY createdAt DESC LIMIT 1',
-          [today],
-        );
-      }
-
-      print('DEBUG: Active target query result: $result');
-      return result.isNotEmpty ? result.first : null;
-    } catch (e) {
-      print('Error getting active target: $e');
-      return null;
+    // Check cache first
+    if (_cachedActiveTarget != null &&
+        _activeTargetCacheTime != null &&
+        DateTime.now().difference(_activeTargetCacheTime!) <
+            _cacheValidDuration) {
+      return _cachedActiveTarget;
     }
+
+    final db = await database;
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    final result = await db.rawQuery(
+      '''SELECT * FROM targets 
+         WHERE DATE(endDate) >= DATE(?) AND status = "active" 
+         ORDER BY createdAt DESC LIMIT 1''',
+      [today],
+    );
+
+    _cachedActiveTarget = result.isNotEmpty ? result.first : null;
+    _activeTargetCacheTime = DateTime.now();
+
+    return _cachedActiveTarget;
+  }
+
+  Future<Map<String, dynamic>?> getActiveTargetByUser(String userId) async {
+    final db = await database;
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    final result = await db.rawQuery(
+      '''SELECT * FROM targets 
+         WHERE DATE(endDate) >= DATE(?) AND status = "active" AND userId = ?
+         ORDER BY createdAt DESC LIMIT 1''',
+      [today, userId],
+    );
+
+    return result.isNotEmpty ? result.first : null;
   }
 
   Future<int> updateTarget(int id, Map<String, dynamic> target) async {
-    try {
-      final db = await database;
-      return await db.update(
-        'targets',
-        target,
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    } catch (e) {
-      print('Error updating target: $e');
-      rethrow;
+    final db = await database;
+
+    target['updatedAt'] = DateTime.now().toIso8601String();
+
+    if (target['target'] is String) {
+      target['target'] = double.tryParse(target['target']) ?? 0.0;
     }
+
+    invalidateActiveTargetCache();
+
+    return await db.update(
+      'targets',
+      target,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> deleteTarget(int id, [String? userId]) async {
-    try {
-      final db = await database;
+    final db = await database;
+    invalidateActiveTargetCache();
 
-      if (userId != null) {
-        return await db.delete(
-          'targets',
-          where: 'id = ? AND userId = ?',
-          whereArgs: [id, userId],
-        );
-      } else {
-        return await db.delete(
-          'targets',
-          where: 'id = ?',
-          whereArgs: [id],
-        );
-      }
-    } catch (e) {
-      print('Error deleting target: $e');
-      rethrow;
+    if (userId != null && userId.isNotEmpty) {
+      return await db.delete(
+        'targets',
+        where: 'id = ? AND userId = ?',
+        whereArgs: [id, userId],
+      );
+    } else {
+      return await db.delete(
+        'targets',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
     }
+  }
+
+  // ===== CACHE MANAGEMENT =====
+  void invalidateActiveTargetCache() {
+    _cachedActiveTarget = null;
+    _activeTargetCacheTime = null;
+  }
+
+  // ===== TRANSACTION SUPPORT =====
+  Future<T> transaction<T>(Future<T> Function(Transaction txn) action) async {
+    final db = await database;
+    return await db.transaction(action);
   }
 
   // ===== UTILITY METHODS =====
+  Future<List<Map<String, dynamic>>> getUsageInDateRange(
+    String userId,
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    final db = await database;
+    final startDateStr = DateFormat('yyyy-MM-dd').format(startDate);
+    final endDateStr = DateFormat('yyyy-MM-dd').format(endDate);
 
-  Future<Map<String, int>> getDatabaseStats() async {
-    try {
-      final db = await database;
-
-      final dailyUsageCount =
-          await db.rawQuery('SELECT COUNT(*) as count FROM daily_usage');
-      final targetsCount =
-          await db.rawQuery('SELECT COUNT(*) as count FROM targets');
-
-      return {
-        'daily_usage': dailyUsageCount.first['count'] as int,
-        'targets': targetsCount.first['count'] as int,
-      };
-    } catch (e) {
-      print('Error getting database stats: $e');
-      return {
-        'daily_usage': 0,
-        'targets': 0,
-      };
-    }
+    return await db.query(
+      'daily_usage',
+      where: 'userId = ? AND tanggal BETWEEN ? AND ?',
+      whereArgs: [userId, startDateStr, endDateStr],
+      orderBy: 'tanggal DESC, created_at DESC',
+    );
   }
 
-  Future<void> clearAllData() async {
-    try {
-      final db = await database;
-      await db.delete('daily_usage');
-      await db.delete('targets');
-      print('All data cleared from database');
-    } catch (e) {
-      print('Error clearing all data: $e');
-      rethrow;
-    }
+  Future<List<Map<String, dynamic>>> getRecentUsage(
+    String userId,
+    int limit,
+  ) async {
+    final db = await database;
+
+    return await db.query(
+      'daily_usage',
+      where: 'userId = ?',
+      whereArgs: [userId],
+      orderBy: 'tanggal DESC, created_at DESC',
+      limit: limit,
+    );
+  }
+
+  Future<void> clearUserData(String userId) async {
+    await transaction((txn) async {
+      await txn.delete('daily_usage', where: 'userId = ?', whereArgs: [userId]);
+      await txn.delete('targets', where: 'userId = ?', whereArgs: [userId]);
+    });
+
+    invalidateActiveTargetCache();
   }
 
   Future<void> close() async {
-    try {
-      final db = _database;
-      if (db != null) {
-        await db.close();
-        _database = null;
-      }
-      print('Database closed successfully');
-    } catch (e) {
-      print('Error closing database: $e');
-    }
-  }
-
-  // ===== DEBUG METHOD =====
-
-  Future<void> resetDatabase() async {
-    try {
-      String path = join(await getDatabasesPath(), 'emonic.db');
-      await deleteDatabase(path);
+    final db = _database;
+    if (db != null && db.isOpen) {
+      await db.close();
       _database = null;
-      print('Database reset successfully');
-    } catch (e) {
-      print('Error resetting database: $e');
+      invalidateActiveTargetCache();
     }
   }
 }

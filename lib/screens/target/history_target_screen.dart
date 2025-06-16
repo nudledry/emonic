@@ -390,8 +390,7 @@ class _HistoryTargetScreenState extends State<HistoryTargetScreen> {
                 _buildInfoRow(Icons.track_changes, "Parameter",
                     target['parameter'] ?? 'N/A'),
                 const SizedBox(height: 8),
-                _buildInfoRow(
-                    Icons.flag, "Target", "${target['target'] ?? 'N/A'} kWh"),
+                _buildInfoRow(Icons.flag, "Target", _formatTargetValue(target)),
                 const SizedBox(height: 8),
                 _buildInfoRow(
                   Icons.calendar_today,
@@ -404,6 +403,35 @@ class _HistoryTargetScreenState extends State<HistoryTargetScreen> {
         ],
       ),
     );
+  }
+
+  String _formatTargetValue(Map<String, dynamic> target) {
+    final parameter = target['parameter'] as String?;
+    final targetValue = target['target']?.toString() ?? 'N/A';
+
+    if (targetValue == 'N/A') return 'N/A';
+
+    // Check parameter type and format accordingly
+    if (parameter == "Biaya (Rp)") {
+      // Format as currency (Rupiah)
+      try {
+        final value = double.parse(targetValue);
+        return "Rp ${value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}";
+      } catch (e) {
+        return "Rp $targetValue";
+      }
+    } else if (parameter == "Daya Listrik (kWh)") {
+      // Format as kWh
+      try {
+        final value = double.parse(targetValue);
+        return "${value.toStringAsFixed(2)} kWh";
+      } catch (e) {
+        return "$targetValue kWh";
+      }
+    } else {
+      // Default format for unknown parameters
+      return "$targetValue kWh";
+    }
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
@@ -646,17 +674,24 @@ class _HistoryTargetScreenState extends State<HistoryTargetScreen> {
       ),
       value: value.isNotEmpty ? value : null,
       onChanged: onChanged,
+      isExpanded: true,
       items: items.map((item) {
         return DropdownMenuItem<String>(
           value: item,
           child: Text(
             item,
-            style: TextStyle(color: AppColors.black),
+            style: TextStyle(
+              color: AppColors.black,
+              fontSize: 14,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
         );
       }).toList(),
       style: TextStyle(color: AppColors.black),
       dropdownColor: AppColors.white,
+      menuMaxHeight: 200,
     );
   }
 

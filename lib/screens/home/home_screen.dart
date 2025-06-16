@@ -5,6 +5,8 @@ import 'package:emonic/screens/news/berita.dart';
 import 'package:emonic/screens/settings/settings_screen.dart';
 import 'package:emonic/screens/home/widgets/home_content.dart';
 import 'package:emonic/constants/colors.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Tambahkan import ini
 
 class HomeScreen extends StatefulWidget {
   final int initialIndex;
@@ -17,19 +19,56 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late int _currentIndex;
+  String? _userName;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    _loadUserData();
   }
 
-  final List<Widget> _screens = [
-    const HomeContent(),
-    const TargetPenggunaanScreen(),
-    BeritaScreen(),
-    const SettingsScreen(),
-  ];
+  // Load user data from Firestore
+  Future<void> _loadUserData() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // Ambil data dari Firestore berdasarkan UID user
+        final userDoc = await FirebaseFirestore.instance
+            .collection('user')
+            .doc(user.uid)
+            .get();
+
+        setState(() {
+          if (userDoc.exists && userDoc.data() != null) {
+            _userName = userDoc.data()!['name'] as String? ??
+                user.displayName ??
+                user.email?.split('@')[0] ??
+                'Pengguna';
+          } else {
+            _userName =
+                user.displayName ?? user.email?.split('@')[0] ?? 'Pengguna';
+          }
+        });
+      } else {
+        setState(() {
+          _userName = 'Pengguna';
+        });
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+      setState(() {
+        _userName = 'Pengguna';
+      });
+    }
+  }
+
+  List<Widget> get _screens => [
+        const HomeContent(),
+        const TargetPenggunaanScreen(),
+        BeritaScreen(userName: _userName),
+        const SettingsScreen(),
+      ];
 
   void _onTabTapped(int index) {
     setState(() {
@@ -51,6 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   PreferredSizeWidget? _buildAppBar() {
+    // Only show app bar for home screen (index 0)
     if (_currentIndex != 0) return null;
 
     return AppBar(
@@ -62,6 +102,21 @@ class _HomeScreenState extends State<HomeScreen> {
             'assets/logo.png',
             height: 30,
             width: 30,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                height: 30,
+                width: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  Icons.energy_savings_leaf,
+                  color: AppColors.primaryBlue,
+                  size: 20,
+                ),
+              );
+            },
           ),
           const SizedBox(width: 8),
           const Text(
@@ -77,13 +132,20 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 36,
             child: FloatingActionButton(
               mini: true,
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                // Navigate to add usage screen and refresh data when returning
+                final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const DailyUsageScreen(),
                   ),
                 );
+
+                // Refresh home content if data was added
+                if (result == true && mounted) {
+                  // Trigger refresh di HomeContent
+                  setState(() {});
+                }
               },
               backgroundColor: AppColors.white,
               foregroundColor: AppColors.primaryBlue,
@@ -106,6 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
       type: BottomNavigationBarType.fixed,
       selectedItemColor: AppColors.primaryBlue,
       unselectedItemColor: AppColors.textGrey,
+      backgroundColor: Colors.white,
+      elevation: 8,
       items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.home),
