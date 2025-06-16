@@ -15,4 +15,8 @@ class UsageConstants {
 
   static const String defaultUnit = "kWh";
   static const int maxDisplayItems = 10;
+  static const double minInputValue = 0.1;
+  static const double maxInputValue = 10000;
+  static const String dateFormat = 'dd/MM/yyyy';
+  static const int maxHistoryDays = 365;
 }

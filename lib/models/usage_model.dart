@@ -2,6 +2,7 @@ import 'package:emonic/constants/tarif_listrik.dart';
 
 class UsageModel {
   final int? id;
+  final String? userId;
   final String golongan;
   final String parameter;
   final double nilai;
@@ -11,6 +12,7 @@ class UsageModel {
 
   UsageModel({
     this.id,
+    this.userId,
     required this.golongan,
     required this.parameter,
     required this.nilai,
@@ -22,6 +24,7 @@ class UsageModel {
   factory UsageModel.fromMap(Map<String, dynamic> map) {
     return UsageModel(
       id: map['id'],
+      userId: map['userId']?.toString(),
       golongan: map['golongan']?.toString() ?? '',
       parameter: map['parameter']?.toString() ?? '',
       nilai: (map['nilai'] ?? 0.0).toDouble(),
@@ -36,6 +39,7 @@ class UsageModel {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'userId': userId,
       'golongan': golongan,
       'parameter': parameter,
       'nilai': nilai,
@@ -115,6 +119,7 @@ class UsageModel {
 
   UsageModel copyWith({
     int? id,
+    String? userId,
     String? golongan,
     String? parameter,
     double? nilai,
@@ -124,6 +129,7 @@ class UsageModel {
   }) {
     return UsageModel(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       golongan: golongan ?? this.golongan,
       parameter: parameter ?? this.parameter,
       nilai: nilai ?? this.nilai,
