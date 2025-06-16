@@ -7,24 +7,17 @@ import 'package:emonic/constants/colors.dart';
 import 'package:emonic/constants/usage_constants.dart';
 import 'package:emonic/screens/usage/widgets/usage_item_widget.dart';
 import 'package:emonic/helpers/dialog_helper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
-class UsageDataList extends StatefulWidget {
+class UsageDataList extends StatelessWidget {
   final HomeDataService dataService;
   final VoidCallback? onDataChanged;
+  final UsageService _usageService = UsageService();
 
-  const UsageDataList({
+  UsageDataList({
     super.key,
     required this.dataService,
     this.onDataChanged,
   });
-
-  @override
-  State<UsageDataList> createState() => _UsageDataListState();
-}
-
-class _UsageDataListState extends State<UsageDataList> {
-  final UsageService _usageService = UsageService();
 
   @override
   Widget build(BuildContext context) {
@@ -46,11 +39,11 @@ class _UsageDataListState extends State<UsageDataList> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
-          if (widget.dataService.dailyUsageData.isEmpty)
+          if (dataService.dailyUsageData.isEmpty)
             _buildEmptyState(context)
           else
             _buildUsageList(context),
-          if (widget.dataService.dailyUsageData.length >
+          if (dataService.dailyUsageData.length >
               UsageConstants.maxDisplayItems)
             _buildViewAllButton(context),
         ],
@@ -75,7 +68,7 @@ class _UsageDataListState extends State<UsageDataList> {
           ),
           const Spacer(),
           Text(
-            '${widget.dataService.dailyUsageData.length} data',
+            '${dataService.dailyUsageData.length} data',
             style: TextStyle(
               color: AppColors.textGrey,
               fontSize: 12,
@@ -125,10 +118,10 @@ class _UsageDataListState extends State<UsageDataList> {
   }
 
   Widget _buildUsageList(BuildContext context) {
-    final itemCount = widget.dataService.dailyUsageData.length >
-            UsageConstants.maxDisplayItems
-        ? UsageConstants.maxDisplayItems
-        : widget.dataService.dailyUsageData.length;
+    final itemCount =
+        dataService.dailyUsageData.length > UsageConstants.maxDisplayItems
+            ? UsageConstants.maxDisplayItems
+            : dataService.dailyUsageData.length;
 
     return ListView.separated(
       shrinkWrap: true,
@@ -139,8 +132,7 @@ class _UsageDataListState extends State<UsageDataList> {
         height: 1,
       ),
       itemBuilder: (context, index) {
-        final usage =
-            UsageModel.fromMap(widget.dataService.dailyUsageData[index]);
+        final usage = UsageModel.fromMap(dataService.dailyUsageData[index]);
         return UsageItemWidget(
           usage: usage,
           onEdit: () => _handleEdit(context, usage),
@@ -157,7 +149,7 @@ class _UsageDataListState extends State<UsageDataList> {
         child: TextButton(
           onPressed: () => _showAllDataSnackBar(context),
           child: Text(
-            'Lihat Semua (${widget.dataService.dailyUsageData.length} data)',
+            'Lihat Semua (${dataService.dailyUsageData.length} data)',
             style: TextStyle(
               color: AppColors.primaryBlue,
               fontWeight: FontWeight.w500,
@@ -174,17 +166,14 @@ class _UsageDataListState extends State<UsageDataList> {
       MaterialPageRoute(
         builder: (context) => const DailyUsageScreen(),
       ),
-    ).then((_) {
-      // Refresh data when returning from add usage screen
-      _refreshData();
-    });
+    );
   }
 
   void _showAllDataSnackBar(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-            'Total ${widget.dataService.dailyUsageData.length} data tersedia'),
+        content:
+            Text('Total ${dataService.dailyUsageData.length} data tersedia'),
         backgroundColor: AppColors.primaryBlue,
       ),
     );
@@ -196,18 +185,14 @@ class _UsageDataListState extends State<UsageDataList> {
       if (updatedUsage != null) {
         await _showLoadingDialog(context);
         await _usageService.updateUsage(updatedUsage);
-        if (mounted) Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context); // Close loading dialog
 
-        if (mounted) {
-          _showSuccessSnackBar(context, "Data penggunaan berhasil diperbarui");
-          _refreshData();
-        }
+        _showSuccessSnackBar(context, "Data penggunaan berhasil diperbarui");
+        _refreshData();
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // Close loading dialog if open
-      if (mounted) {
-        _showErrorSnackBar(context, "Error memperbarui data: $e");
-      }
+      Navigator.pop(context); // Close loading dialog if open
+      _showErrorSnackBar(context, "Error memperbarui data: $e");
     }
   }
 
@@ -217,86 +202,50 @@ class _UsageDataListState extends State<UsageDataList> {
       if (shouldDelete) {
         await _showLoadingDialog(context);
         await _usageService.deleteUsage(usage.id!);
-        if (mounted) Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context); // Close loading dialog
 
-        if (mounted) {
-          _showSuccessSnackBar(context, "Data penggunaan berhasil dihapus");
-          _refreshData();
-        }
+        _showSuccessSnackBar(context, "Data penggunaan berhasil dihapus");
+        _refreshData();
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // Close loading dialog if open
-      if (mounted) {
-        _showErrorSnackBar(context, "Error menghapus data: $e");
-      }
+      Navigator.pop(context); // Close loading dialog if open
+      _showErrorSnackBar(context, "Error menghapus data: $e");
     }
   }
 
   Future<void> _showLoadingDialog(BuildContext context) async {
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => Center(
-          child: CircularProgressIndicator(
-            color: AppColors.primaryBlue,
-          ),
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primaryBlue,
         ),
-      );
-    }
+      ),
+    );
   }
 
   void _showSuccessSnackBar(BuildContext context, String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppColors.green,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.green,
+      ),
+    );
   }
 
   void _showErrorSnackBar(BuildContext context, String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppColors.red,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.red,
+      ),
+    );
   }
 
-  Future<void> _refreshData() async {
-    try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  const Text("Silakan login untuk melihat data penggunaan"),
-              backgroundColor: AppColors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      await widget.dataService.refreshData();
-      if (mounted) {
-        setState(() {
-          // Trigger rebuild
-        });
-
-        // Call the callback if provided
-        widget.onDataChanged?.call();
-      }
-    } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar(context, "Error memuat data: $e");
-      }
+  void _refreshData() {
+    if (onDataChanged != null) {
+      onDataChanged!();
     }
   }
 }
