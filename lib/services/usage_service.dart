@@ -1,16 +1,33 @@
 import 'package:emonic/helpers/database_helper.dart';
 import 'package:emonic/models/usage_model.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class UsageService {
   final DatabaseHelper _databaseHelper = DatabaseHelper();
 
+  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
+
   Future<List<UsageModel>> getAllUsages() async {
     try {
+      final userId = _currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
       final List<Map<String, dynamic>> maps =
-          await _databaseHelper.getDailyUsage();
+          await _databaseHelper.getDailyUsage(userId);
       return maps.map((map) => UsageModel.fromMap(map)).toList();
     } catch (e) {
-      throw Exception('Failed to load usage data: $e');
+      print('Error loading usage data: $e');
+
+      // Fallback for backward compatibility
+      try {
+        final List<Map<String, dynamic>> maps =
+            await _databaseHelper.getDailyUsage();
+        return maps.map((map) => UsageModel.fromMap(map)).toList();
+      } catch (e2) {
+        throw Exception('Failed to load usage data: $e2');
+      }
     }
   }
 
@@ -19,7 +36,17 @@ class UsageService {
       if (usage.id == null) {
         throw Exception('Usage ID cannot be null for update');
       }
-      await _databaseHelper.updateDailyUsage(usage.id!, usage.toMap());
+
+      final userId = _currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      // Ensure the usage data includes userId
+      final updatedData = usage.toMap();
+      updatedData['userId'] = userId;
+
+      await _databaseHelper.updateDailyUsage(usage.id!, updatedData);
     } catch (e) {
       throw Exception('Failed to update usage: $e');
     }
@@ -27,6 +54,11 @@ class UsageService {
 
   Future<void> deleteUsage(int id) async {
     try {
+      final userId = _currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
       await _databaseHelper.deleteDailyUsage(id);
     } catch (e) {
       throw Exception('Failed to delete usage: $e');
@@ -35,7 +67,15 @@ class UsageService {
 
   Future<void> createUsage(UsageModel usage) async {
     try {
-      await _databaseHelper.insertDailyUsage(usage.toMap());
+      final userId = _currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final usageData = usage.toMap();
+      usageData['userId'] = userId;
+
+      await _databaseHelper.insertDailyUsage(usageData);
     } catch (e) {
       throw Exception('Failed to create usage: $e');
     }
@@ -43,6 +83,11 @@ class UsageService {
 
   Future<double> getTotalUsageByDate(DateTime date) async {
     try {
+      final userId = _currentUserId;
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
       final usages = await getAllUsages();
       double totalKwh = 0.0;
 

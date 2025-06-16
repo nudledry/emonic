@@ -3,6 +3,7 @@ import 'package:emonic/helpers/database_helper.dart';
 import 'package:emonic/constants/colors.dart';
 import 'package:intl/intl.dart';
 import 'package:emonic/constants/tarif_listrik.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DailyUsageScreen extends StatefulWidget {
   const DailyUsageScreen({super.key});
@@ -100,6 +101,19 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
           selectedParameter != null &&
           selectedDate != null &&
           nilaiController.text.isNotEmpty) {
+        // Check if user is authenticated
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                  "Anda harus login untuk menyimpan data penggunaan"),
+              backgroundColor: AppColors.red,
+            ),
+          );
+          return;
+        }
+
         try {
           showDialog(
             context: context,
@@ -112,6 +126,7 @@ class _DailyUsageScreenState extends State<DailyUsageScreen> {
           );
 
           await DatabaseHelper().insertDailyUsage({
+            'userId': userId, // Add userId to the data
             'golongan': selectedGolongan!,
             'parameter': selectedParameter!,
             'nilai': double.parse(nilaiController.text),
