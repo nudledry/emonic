@@ -834,7 +834,7 @@ class _BeritaScreenState extends State<BeritaScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Hi $displayName',
+        Text('Hi, $displayName!',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
         Text(formattedDate,
             style: TextStyle(color: Colors.grey[600], fontSize: 14)),

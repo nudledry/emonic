@@ -6,6 +6,7 @@ import 'package:emonic/screens/settings/settings_screen.dart';
 import 'package:emonic/screens/home/widgets/home_content.dart';
 import 'package:emonic/constants/colors.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Tambahkan import ini
 
 class HomeScreen extends StatefulWidget {
   final int initialIndex;
@@ -27,14 +28,31 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadUserData();
   }
 
-  // Load user data for passing to BeritaScreen
+  // Load user data from Firestore
   Future<void> _loadUserData() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
+        // Ambil data dari Firestore berdasarkan UID user
+        final userDoc = await FirebaseFirestore.instance
+            .collection('user')
+            .doc(user.uid)
+            .get();
+
         setState(() {
-          _userName =
-              user.displayName ?? user.email?.split('@')[0] ?? 'Pengguna';
+          if (userDoc.exists && userDoc.data() != null) {
+            _userName = userDoc.data()!['name'] as String? ??
+                user.displayName ??
+                user.email?.split('@')[0] ??
+                'Pengguna';
+          } else {
+            _userName =
+                user.displayName ?? user.email?.split('@')[0] ?? 'Pengguna';
+          }
+        });
+      } else {
+        setState(() {
+          _userName = 'Pengguna';
         });
       }
     } catch (e) {
@@ -48,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> get _screens => [
         const HomeContent(),
         const TargetPenggunaanScreen(),
-        BeritaScreen(userName: _userName), // Pass userName to BeritaScreen
+        BeritaScreen(userName: _userName),
         const SettingsScreen(),
       ];
 
